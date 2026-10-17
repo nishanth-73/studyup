@@ -1,0 +1,10 @@
+{
+  "name": "studyup-feedback-api",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Vercel serverless feedback endpoint tests (mocked Resend, no real emails)",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test feedback.test.js assetlinks.test.js landing.test.js"
+  }
+}

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solid StudyUp background (#17181D) so the native launch screen blends
+     seamlessly into the Flutter SVG splash. No logo here on purpose. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <color android:color="#17181D" />
+    </item>
+</layer-list>

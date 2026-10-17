@@ -1,0 +1,21 @@
+# Supabase CLI configuration for StudyUp.
+#
+# This file declares Edge Functions only. Run all commands from the repo root:
+#   supabase login
+#   supabase link --project-ref YOUR_PROJECT_REF
+#   supabase secrets set RESEND_API_KEY=... FEEDBACK_TO_EMAIL=... FEEDBACK_FROM_EMAIL=...
+#   supabase functions deploy send-feedback
+#
+# Secrets are server-side only and are NEVER committed. `project_id` below is
+# just the local-dev identifier, not a credential.
+
+project_id = "studyup"
+
+[functions.send-feedback]
+# JWT verification is intentionally OFF so demo-mode and signed-out users can
+# still send feedback (the app explicitly supports anonymous/demo access).
+# Abuse protection instead comes from inside the function: required Supabase
+# gateway `apikey` header, strict validation, 16 KB body cap, and per-isolate
+# rate limiting. This is not an unrestricted relay — the recipient is fixed
+# server-side and never taken from the client.
+verify_jwt = false

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Collapsed Live Progress: single title row (Live Progress + timer on
+     the right) with the horizontal progress bar underneath.
+     Standard Android styling; RemoteViews-compatible views only.
+     Theme behavior (system-controlled, do not hardcode):
+     - No android:background here: DecoratedCustomViewStyle lets Android
+       draw the notification card, so Light/Dark follows the phone's
+       system appearance like native notifications.
+     - Text uses TextAppearance.Compat.Notification.* (via NotificationCompat):
+       system-managed, contrast-safe colors that adapt to Light/Dark.
+       Never set a hardcoded textColor or background here.
+     - ProgressBar uses the platform horizontal style (system tint/track).
+     - No time-of-day logic: appearance follows the Android uiMode
+       (Light/Dark/System default), re-applied on every notify() tick. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:baselineAligned="true">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Live Progress"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:textAppearance="@style/TextAppearance.Compat.Notification.Title" />
+
+        <TextView
+            android:id="@+id/live_timer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:text="00:00:00"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:textAppearance="@style/TextAppearance.Compat.Notification.Time" />
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/live_bar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="14dp"
+        android:layout_marginTop="8dp"
+        android:max="100"
+        android:progress="0" />
+</LinearLayout>

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/feedback.js": {
+      "maxDuration": 10
+    }
+  },
+  "rewrites": [
+    { "source": "/i/:token", "destination": "/index.html" },
+    { "source": "/invite/:token", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/apk.json",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+    }
+  ]
+}

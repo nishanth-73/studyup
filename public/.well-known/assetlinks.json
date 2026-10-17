@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.studyup.studyup",
+      "sha256_cert_fingerprints": [
+        "9B:F3:A6:6B:41:18:25:FC:7B:C5:3B:CB:AF:55:F9:55:42:8D:56:26:B4:AC:DF:7E:20:0B:3D:7C:B4:C3:AB:E0"
+      ]
+    }
+  }
+]

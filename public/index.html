@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StudyUp — Focus on your goals. Grow together.</title>
+  <meta name="description" content="StudyUp is a calm study tracker: start a focus session, log the minutes, keep a streak — and cheer friends on without sharing raw data.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#f7f2e7">
+  <meta property="og:title" content="StudyUp — Focus on your goals. Grow together.">
+  <meta property="og:description" content="A calm study tracker with a single-use invitation system.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --paper: #f7f2e7;
+      --paper-2: #fffdf7;
+      --ink: #241a10;
+      --muted: #6f6153;
+      --accent: #a8641c;
+      --line: #e3d9c8;
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .skip {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: var(--ink);
+      color: var(--paper);
+      padding: 8px 14px;
+      border-radius: 0 0 10px 0;
+      z-index: 20;
+    }
+    .skip:focus { left: 0; }
+    .sr-only {
+      position: absolute;
+      width: 1px; height: 1px;
+      margin: -1px; padding: 0;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      border: 0;
+    }
+    .art {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .art img {
+      position: absolute;
+      width: clamp(120px, 17vw, 250px);
+      height: auto;
+      mix-blend-mode: multiply;
+    }
+    .art img:nth-child(1) { top: 3%; left: 2%; animation: float 9s ease-in-out infinite; }
+    .art img:nth-child(2) { top: 5%; right: 2%; width: clamp(150px, 21vw, 300px); animation: float 11s ease-in-out infinite; animation-delay: -3s; }
+    .art img:nth-child(3) { bottom: 4%; left: 5%; animation: float 10s ease-in-out infinite; animation-delay: -6s; }
+    .art img:nth-child(4) { bottom: 2%; right: 4%; width: clamp(130px, 19vw, 270px); animation: float 12s ease-in-out infinite; animation-delay: -1.5s; }
+    @keyframes float {
+      0%, 100% { transform: translateY(-6px); }
+      50% { transform: translateY(8px); }
+    }
+    .page {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 20px;
+      text-align: center;
+    }
+    .wordmark {
+      font-size: clamp(2.2rem, 6vw, 3.4rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+    .tagline {
+      font-size: clamp(1.1rem, 3vw, 1.5rem);
+      font-weight: 600;
+      margin: 10px 0 0;
+    }
+    .lede {
+      max-width: 44ch;
+      margin: 14px auto 0;
+      color: var(--muted);
+    }
+    .card {
+      width: 100%;
+      max-width: 480px;
+      margin: 28px auto 0;
+      padding: 22px;
+      background: var(--paper-2);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(70, 50, 20, 0.06);
+      text-align: left;
+    }
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 1.15rem;
+      letter-spacing: -0.01em;
+    }
+    .card p { margin: 0 0 10px; color: var(--muted); }
+    .card p:last-child { margin-bottom: 0; }
+    .card strong { color: var(--ink); }
+    .hint { font-size: 0.9rem; }
+    code {
+      font: 0.9em/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: rgba(36, 26, 16, 0.06);
+      border-radius: 6px;
+      padding: 2px 6px;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 20px;
+      border-radius: 999px;
+      border: 1px solid var(--ink);
+      background: var(--ink);
+      color: var(--paper);
+      font: inherit;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .btn--ghost { background: transparent; color: var(--ink); }
+    .btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .foot {
+      margin-top: 36px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .foot p { margin: 0; }
+    @media (max-width: 900px) {
+      .art {
+        position: static;
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+        gap: 2vw;
+        margin-top: 18px;
+      }
+      .art img,
+      .art img:nth-child(2),
+      .art img:nth-child(4) { position: static; width: min(21vw, 110px); }
+      .art img:nth-child(n) { animation: none; }
+      .page {
+        min-height: auto;
+        justify-content: flex-start;
+        padding: 26px 18px 44px;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .art img { animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="art" aria-hidden="true">
+    <img src="/assets/web-1.jpg" alt="" loading="lazy" decoding="async">
+    <img src="/assets/web-2.jpg" alt="" loading="lazy" decoding="async">
+    <img src="/assets/web-3.jpg" alt="" loading="lazy" decoding="async">
+    <img src="/assets/web-4.jpg" alt="" loading="lazy" decoding="async">
+  </div>
+
+  <main id="main" class="page">
+    <h1 class="wordmark">StudyUp</h1>
+    <p class="tagline">Focus on your goals. Grow together.</p>
+    <p class="lede">A calm study tracker: start a focus session, log the minutes,
+      keep a streak — and cheer friends on while your raw data stays yours.</p>
+
+    <section class="card" id="inviteBox" hidden aria-labelledby="inviteTitle">
+      <h2 id="inviteTitle">You're invited to StudyUp</h2>
+      <p>Invitations are single-use and only count once you tap
+        <strong>Accept</strong> inside the app. Opening this page does not
+        use it up.</p>
+      <div class="actions">
+        <a class="btn" id="openApp" hidden>Accept invitation in StudyUp</a>
+        <button class="btn btn--ghost" id="copyLink" type="button">Copy invite link</button>
+      </div>
+      <p id="deviceHint" class="hint" hidden>StudyUp runs on Android. If it
+        isn't installed yet, install it first and open this link again — the
+        invitation stays valid until accepted inside the app. On a computer,
+        copy the link and send it to your phone.</p>
+      <p class="hint">Sign in inside StudyUp and accept there — your friend then
+        appears on your friends board.</p>
+    </section>
+
+    <section class="card" id="apkBox" aria-labelledby="apkTitle">
+      <h2 id="apkTitle">Android app</h2>
+      <p id="apkNote">An installable Android build is on the way. Invitation
+        links and in-app feedback already work today.</p>
+      <div class="actions">
+        <a class="btn" id="apkLink" href="#" hidden rel="noopener">Download Android APK</a>
+        <button class="btn" id="apkSoon" type="button" disabled>Android APK — coming soon</button>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <p>StudyUp · built for focused studying, together.</p>
+      <p class="sr-only" id="status" aria-live="polite"></p>
+    </footer>
+  </main>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var tokenMatch = location.pathname.match(
+        /^\/(?:i|invite)\/([0-9a-fA-F]{32,128})\/?$/
+      );
+      var token = tokenMatch ? tokenMatch[1] : null;
+      var isAndroid = /Android/i.test(navigator.userAgent);
+      var status = document.getElementById('status');
+
+      function announce(message) {
+        if (status) status.textContent = message;
+      }
+
+      if (token) {
+        document.getElementById('inviteBox').hidden = false;
+        document.getElementById('deviceHint').hidden = false;
+        if (isAndroid) {
+          var fallback = encodeURIComponent(location.href);
+          var openApp = document.getElementById('openApp');
+          openApp.href =
+            'intent://invite/' + token +
+            '#Intent;scheme=studyup;package=com.studyup.studyup;S.browser_fallback_url=' +
+            fallback + ';end';
+          openApp.hidden = false;
+        }
+      }
+
+      var copyBtn = document.getElementById('copyLink');
+      if (copyBtn) {
+        copyBtn.addEventListener('click', function () {
+          var original = copyBtn.textContent;
+          function done(message) {
+            copyBtn.textContent = message;
+            announce(message);
+            setTimeout(function () { copyBtn.textContent = original; }, 2000);
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(location.href).then(
+              function () { done('Copied'); },
+              function () { done('Copy failed — use the address bar'); }
+            );
+          } else {
+            done('Copy the address bar link');
+          }
+        });
+      }
+
+      fetch('/apk.json', { cache: 'no-store' })
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (cfg) {
+          if (!cfg) return;
+          var note = document.getElementById('apkNote');
+          if (note && typeof cfg.note === 'string' && cfg.note) {
+            note.textContent = cfg.note;
+          }
+          var url = typeof cfg.apkUrl === 'string' ? cfg.apkUrl : '';
+          var valid = /^https:\/\//.test(url) && url.indexOf('debug') === -1;
+          if (!valid) return;
+          var link = document.getElementById('apkLink');
+          var label = 'Download Android APK';
+          if (typeof cfg.version === 'string' && cfg.version) {
+            label += ' (' + cfg.version + ')';
+          }
+          link.textContent = label;
+          link.href = url;
+          link.hidden = false;
+          document.getElementById('apkSoon').hidden = true;
+        })
+        .catch(function () {});
+    })();
+  </script>
+</body>
+</html>

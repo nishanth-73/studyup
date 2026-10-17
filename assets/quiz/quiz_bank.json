@@ -1,0 +1,154 @@
+{
+  "quizzes": [
+    {
+      "id": "science-basics",
+      "title": "Science Basics",
+      "description": "Core facts: inventors, cells, and the scientific method.",
+      "questions": [
+        {
+          "id": "sci-mcq-gravity",
+          "type": "mcq",
+          "prompt": "Which completes the statement? Gravity was formulated by ____.",
+          "options": [
+            "Isaac Newton",
+            "Albert Einstein",
+            "Galileo Galilei",
+            "Nikola Tesla"
+          ],
+          "correctIndex": 0,
+          "source": "Gravity was formulated by Isaac Newton."
+        },
+        {
+          "id": "sci-mcq-press",
+          "type": "mcq",
+          "prompt": "The printing press was invented in ____.",
+          "options": ["1731", "1440", "1989", "1928"],
+          "correctIndex": 1,
+          "source": "The printing press was invented in 1440."
+        },
+        {
+          "id": "sci-tf-nucleus",
+          "type": "true_false",
+          "prompt": "The nucleus is the organelle that stores the genetic material.",
+          "answer": true,
+          "source": "The nucleus is the organelle that stores the genetic material."
+        },
+        {
+          "id": "sci-tf-penicillin",
+          "type": "true_false",
+          "prompt": "Penicillin was discovered by Marie Curie.",
+          "answer": false,
+          "originalFragment": "Alexander Fleming",
+          "replacementFragment": "Marie Curie",
+          "source": "Penicillin was discovered by Alexander Fleming."
+        },
+        {
+          "id": "sci-fill-mito",
+          "type": "fill_blank",
+          "prompt": "A ____ is an organelle that produces energy.",
+          "answers": ["mitochondrion"],
+          "source": "A mitochondrion is an organelle that produces energy."
+        },
+        {
+          "id": "sci-fill-penicillin",
+          "type": "fill_blank",
+          "prompt": "Penicillin was discovered by ____.",
+          "answers": ["Alexander Fleming"],
+          "source": "Penicillin was discovered by Alexander Fleming."
+        },
+        {
+          "id": "sci-match-cells",
+          "type": "matching",
+          "prompt": "Match each organelle to what it does.",
+          "left": ["Mitochondrion", "Nucleus", "Ribosome", "Chloroplast"],
+          "right": [
+            "Produces energy for the cell",
+            "Stores the genetic material",
+            "Builds proteins for the cell",
+            "Captures light for photosynthesis"
+          ]
+        },
+        {
+          "id": "sci-subj-define",
+          "type": "subjective",
+          "prompt": "Define photosynthesis in your own words.",
+          "reference": "Photosynthesis is the process by which green plants convert light energy into chemical energy."
+        },
+        {
+          "id": "sci-subj-steps",
+          "type": "subjective",
+          "prompt": "List the steps stated in the source for the scientific method.",
+          "reference": "Ask a question, form a hypothesis, conduct an experiment, and analyze the results.",
+          "referenceItems": [
+            "Ask a question.",
+            "Form a hypothesis.",
+            "Conduct an experiment.",
+            "Analyze the results."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "words-everyday",
+      "title": "Words & Everyday Science",
+      "description": "Terms, measurements, and states of matter.",
+      "questions": [
+        {
+          "id": "wrd-mcq-nucleus",
+          "type": "mcq",
+          "prompt": "Which organelle stores the genetic material?",
+          "options": ["Mitochondrion", "Ribosome", "Nucleus", "Chloroplast"],
+          "correctIndex": 2,
+          "source": "The nucleus is the organelle that stores the genetic material."
+        },
+        {
+          "id": "wrd-mcq-cpu",
+          "type": "mcq",
+          "prompt": "Which part carries out computer instructions?",
+          "options": ["Monitor", "Keyboard", "RAM", "CPU"],
+          "correctIndex": 3,
+          "source": "The CPU carries out computer instructions."
+        },
+        {
+          "id": "wrd-tf-force",
+          "type": "true_false",
+          "prompt": "Force is measured in newtons.",
+          "answer": true,
+          "source": "Force is measured in newtons."
+        },
+        {
+          "id": "wrd-fill-water",
+          "type": "fill_blank",
+          "prompt": "Water boils at ____ degrees Celsius at sea level.",
+          "answers": ["100"],
+          "source": "Water boils at 100 degrees Celsius at sea level."
+        },
+        {
+          "id": "wrd-fill-ram",
+          "type": "fill_blank",
+          "prompt": "RAM stands for ____.",
+          "answers": ["Random Access Memory"],
+          "source": "RAM stands for Random Access Memory."
+        },
+        {
+          "id": "wrd-match-terms",
+          "type": "matching",
+          "prompt": "Match each term to its meaning.",
+          "left": ["RAM", "CPU", "Photosynthesis"],
+          "right": [
+            "A type of computer memory",
+            "Carries out computer instructions",
+            "Converts light into chemical energy"
+          ]
+        },
+        {
+          "id": "wrd-subj-states",
+          "type": "subjective",
+          "prompt": "List the three states of matter stated in the source.",
+          "reference": "Solid, liquid, and gas.",
+          "referenceItems": ["solid", "liquid", "gas"]
+        }
+      ]
+    }
+  ]
+}

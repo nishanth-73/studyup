@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Expanded Live Progress: same compact rows with roomier padding.
+     Standard Android styling; RemoteViews-compatible views only.
+     Theme behavior (system-controlled, do not hardcode):
+     - No android:background: DecoratedCustomViewStyle lets Android draw
+       the card, so Light/Dark follows the phone's system appearance.
+     - Text uses TextAppearance.Compat.Notification.* (system-managed,
+       contrast-safe, adapts to Light/Dark). No hardcoded textColor.
+     - No time-of-day logic: follows Android uiMode, re-applied on
+       every notify() tick / configuration change. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:baselineAligned="true">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Live Progress"
+            android:textStyle="bold"
+            android:textSize="20sp"
+            android:textAppearance="@style/TextAppearance.Compat.Notification.Title" />
+
+        <TextView
+            android:id="@+id/live_timer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:text="00:00:00"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:textAppearance="@style/TextAppearance.Compat.Notification.Time" />
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/live_bar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="16dp"
+        android:layout_marginTop="10dp"
+        android:max="100"
+        android:progress="0" />
+</LinearLayout>
