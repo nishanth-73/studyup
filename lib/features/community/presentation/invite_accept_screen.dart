@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/deeplink/invite_links.dart';
+import '../../../core/notifications/notification_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/ui_kit.dart';
@@ -34,6 +35,10 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
   String? _message;
   String? _friendName;
 
+  /// Notification ids already emitted in this screen's lifetime: a link
+  /// tapped twice (cold + warm start) must not notify twice.
+  final Set<String> _notifiedIds = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +56,7 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
   Future<void> _load() async {
     final remote = _remote;
     if (remote == null) {
+      debugPrint('[invite] no backend configured; cannot load ${widget.token}');
       setState(() {
         _phase = _Phase.failed;
         _message = 'Backend not connected yet. Ask your friend for the app setup, then open this link again.';
@@ -59,6 +65,10 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
     }
     try {
       final preview = await remote.previewInvitation(widget.token);
+      debugPrint(
+        '[invite] preview ${widget.token}: valid=${preview.valid} '
+        'reason=${preview.reason} from=${preview.displayName}',
+      );
       if (!mounted) return;
       if (!preview.valid) {
         setState(() {
@@ -73,12 +83,42 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
         // session is picked up without re-asking anyone to sign in.
         _phase = _Phase.ready;
       });
-    } catch (_) {
+      // "Invitation received" — once per invitation code, so re-opening the
+      // same link (cold start, warm start, repeated taps) cannot spam.
+      await _notifyOnce(
+        id: 'invite-received:${widget.token}',
+        title: 'New StudyUp invitation',
+        body: '${preview.displayName} invited you to join StudyUp.',
+      );
+    } catch (error, stack) {
+      debugPrint('[invite] preview failed for ${widget.token}: $error\n$stack');
       if (!mounted) return;
       setState(() {
         _phase = _Phase.failed;
         _message = 'Could not load this invitation. Check your connection.';
       });
+    }
+  }
+
+  /// Records an in-app + (best-effort) OS notification exactly once per
+  /// [id]. The notification center upserts by id, so a replayed link never
+  /// duplicates a row or re-alerts the user.
+  Future<void> _notifyOnce({
+    required String id,
+    required String title,
+    required String body,
+  }) async {
+    if (_notifiedIds.contains(id)) return;
+    _notifiedIds.add(id);
+    try {
+      await NotificationService.instance.recordCommunityEvent(
+        id: id,
+        title: title,
+        body: body,
+      );
+    } catch (error) {
+      // A notification failure must never break the invitation flow.
+      debugPrint('[invite] notification "$id" failed: $error');
     }
   }
 
@@ -104,6 +144,7 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
     }
     try {
       final name = await remote.acceptInvitation(widget.token);
+      debugPrint('[invite] accepted ${widget.token}; now friends with $name');
       if (!mounted) return;
       // The friendship now exists server-side: refresh the friends list
       // and the friends leaderboard so the new friend appears immediately
@@ -115,7 +156,15 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
         _phase = _Phase.done;
         _friendName = name;
       });
-    } catch (error) {
+      // Acceptance is only announced AFTER the server confirmed it — a
+      // failed accept must never look successful.
+      await _notifyOnce(
+        id: 'invite-accepted:${widget.token}',
+        title: 'Invitation accepted',
+        body: 'You and $name are now study buddies on StudyUp.',
+      );
+    } catch (error, stack) {
+      debugPrint('[invite] accept failed for ${widget.token}: $error\n$stack');
       if (!mounted) return;
       setState(() {
         _phase = _Phase.failed;

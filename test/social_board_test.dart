@@ -618,7 +618,7 @@ void main() {
     expect(friend.weekSeconds, 0);
   });
 
-  test('a friend who opted out of the leaderboard is not listed', () async {
+  test('a friend who opted out of the leaderboard is still a friend', () async {
     SharedPreferences.setMockInitialValues({});
     final week = mondayOf(DateTime.now());
     final remote = _FakeRemote();
@@ -638,7 +638,14 @@ void main() {
     await waitForLoaded(container);
 
     final entries = await container.read(communityDisplayProvider(week).future);
-    // Opted out of sharing: the board must respect that flag.
-    expect(entries.where((e) => e.memberId == 'private'), isEmpty);
+    // Membership is not leaderboard consent: a friend who shares no totals
+    // is still listed (with honest zeros), which is what stopped the
+    // sender/receiver asymmetry. No progress is invented for them.
+    final opted = entries.where((e) => e.memberId == 'private').toList();
+    expect(opted, hasLength(1));
+    expect(opted.single.displayName, 'Private Friend');
+    expect(opted.single.weekSeconds, 0);
+    expect(opted.single.hasData, isFalse);
+    expect(opted.single.rank, 0);
   });
 }

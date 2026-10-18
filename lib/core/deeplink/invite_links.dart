@@ -41,10 +41,11 @@ class InviteLinks {
       final initial = await AppLinks().getInitialLink();
       if (initial == null) return null;
       final token = parseInviteToken(initial);
+      debugPrint('[invite] cold-start link $initial -> token ${token ?? 'none'}');
       if (token != null) return token;
       return _isInviteLink(initial) ? 'invalid' : null;
     } catch (error) {
-      debugPrint('Invite link intake unavailable: $error');
+      debugPrint('[invite] cold-start link intake failed: $error');
       return null;
     }
   }
@@ -67,10 +68,11 @@ class InviteLinks {
     final parsedToken = parseInviteToken(uri);
     if (parsedToken == null && !_isInviteLink(uri)) return;
     final token = parsedToken ?? 'invalid';
+    debugPrint('[invite] warm link $uri -> /invite/$token');
     try {
       appRouter.go('/invite/${Uri.encodeComponent(token)}');
     } catch (error) {
-      debugPrint('Invite route failed: $error');
+      debugPrint('[invite] navigation to /invite/$token failed: $error');
     }
   }
 
@@ -92,6 +94,7 @@ class InviteLinks {
 
   /// Stash a token across the sign-in/onboarding flow.
   static Future<void> stashPending(String token) async {
+    debugPrint('[invite] stashing pending token $token');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_pendingKey, token);
   }
@@ -101,6 +104,7 @@ class InviteLinks {
     final token = prefs.getString(_pendingKey);
     if (token != null && token.isNotEmpty) {
       await prefs.remove(_pendingKey);
+      debugPrint('[invite] resumed pending token $token');
       return token;
     }
     return null;

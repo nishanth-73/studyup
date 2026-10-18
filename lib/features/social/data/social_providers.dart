@@ -164,13 +164,17 @@ LeaderboardEntry _unranked(LeaderboardEntry e) => LeaderboardEntry(
   level: e.level,
 );
 
-/// An accepted friend with no shared statistics yet.
+/// An accepted friend that the leaderboard fetch did not return.
 ///
-/// Friendship is membership, not progress: `leaderboard_scope` only
-/// returns friends who logged time in the queried week, so a brand-new
-/// friend (zero study time, zero XP) is invisible there. Their profile
-/// comes from `my_friends()` — a real row, real name, real avatar — with
-/// honest zeros, so they appear instead of vanishing until they study.
+/// Friendship is MEMBERSHIP, not progress and not leaderboard consent.
+/// `leaderboard_scope('friends')` only returns friends who (a) opted into
+/// the leaderboard and (b) logged time in the queried week, so two whole
+/// classes of real friends were missing from the Community screen — most
+/// visibly the asymmetry reported in production: the sender (who may share
+/// no leaderboard totals) was visible to nobody, while the receiver looked
+/// fine. Their profile comes from `my_friends()` — a real row, real name,
+/// real avatar — with honest zeros, so a friend never disappears because
+/// their progress (or their sharing preference) is empty.
 LeaderboardEntry _friendWithoutStats(RemoteFriend f) => LeaderboardEntry(
   memberId: f.userId,
   displayName: f.displayName,
@@ -213,7 +217,6 @@ Future<List<LeaderboardEntry>> _remoteBoard(
     ...base.current,
     for (final f in friends)
       if (f.userId != selfId &&
-          f.leaderboardOptIn &&
           !base.current.any((e) => e.memberId == f.userId))
         _friendWithoutStats(f),
   ];

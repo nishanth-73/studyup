@@ -1,20 +1,30 @@
 -- Friends with no study data in the queried week must still appear.
 --
 -- Root cause of "my friend accepted my invitation but never shows up in
--- Community": leaderboard_scope('friends', ...) filtered members with
+-- Community" AND of the sender/receiver asymmetry (the sender visible to
+-- the receiver but the receiver not showing the sender): the friends scope
+-- of leaderboard_scope filtered members with
 --   and (p.id = auth.uid() or coalesce(w.week_seconds, 0) > 0 or p_scope = 'everyone')
--- so an accepted friend who has not studied in that window (zero study
--- time, zero XP — the normal state right after accepting) returned no row
--- at all. The app could not show them: there was no profile, no name, no
--- avatar.
+-- *and* required p.leaderboard_opt_in for every eligible member. So an
+-- accepted friend was dropped from the result whenever they had not studied
+-- in that window (zero time / zero XP — the normal state right after
+-- accepting) OR when they simply had leaderboard sharing switched off,
+-- which is exactly the one-sided case reported: the sender (sharing off)
+-- disappeared from the receiver's board while the receiver (sharing on)
+-- showed up on the sender's.
 --
--- Friendship is membership, not progress. The friends scope now returns
--- EVERY accepted, opted-in friend; the client decides how a member with no
--- shared data is displayed (unranked, honest zeros) and still ranks by real
--- seconds when data arrives. Nothing else changes:
+-- Friendship is MEMBERSHIP. The friends scope now returns every accepted
+-- friend regardless of progress and regardless of the leaderboard-sharing
+-- preference, carrying zero aggregates when nothing is shared. That exposes
+-- nothing private: a member with no shared rows returns zeros, never data.
+-- The 'everyone' scope is unchanged and still requires leaderboard_opt_in,
+-- and self is unchanged.
+--
+-- Clients decide how a member with no shared data is displayed (unranked,
+-- honest zeros) and still rank by real seconds when data arrives. Nothing
+-- else changes:
 --   - only SUMs/aggregates leave the database (unchanged);
---   - eligibility is still friends + leaderboard_opt_in (unchanged);
---   - the 'everyone' scope is unchanged;
+--   - eligibility is still friends-only for this scope (unchanged);
 --   - the user is never opted in without their own flag.
 --
 -- Run AFTER 20261102_social_backend.sql and 20261104_hardening_fix.sql.
@@ -55,14 +65,17 @@ begin
   end if;
   return query
   with eligible as (
+    -- 'everyone' (public board): leaderboard opt-in only.
+    -- 'friends': every accepted friend + self, with or without shared
+    -- data and with or without the leaderboard-sharing preference —
+    -- friendship is membership. Non-opted-in members simply carry zero
+    -- aggregates, so nothing private is revealed.
     select p.id
     from public.community_profiles p
-    where p.leaderboard_opt_in
-      and (
-        p_scope = 'everyone'
-        or public.community_are_friends(auth.uid(), p.id)
-        or p.id = auth.uid()
-      )
+    where case
+            when p_scope = 'everyone' then p.leaderboard_opt_in
+            else public.community_are_friends(auth.uid(), p.id) or p.id = auth.uid()
+          end
   ),
   -- Exact overlap seconds from validated segments. This definer function
   -- may read segments rows, but only SUMS leave the database.
@@ -122,8 +135,17 @@ begin
     group by days.user_id
   )
   select p.id, p.display_name, p.avatar_id, p.blob_variant,
-         coalesce(w.week_seconds, 0), coalesce(wd.active_days, 0),
-         coalesce(t.total_seconds, 0), coalesce(s.streak_days, 0)
+         -- A member who shares no leaderboard totals is still LISTED (so a
+         -- real friend never disappears) but every statistic is forced to
+         -- zero: opting out must not leak study time, streaks or totals.
+         case when p.id = auth.uid() or p.leaderboard_opt_in
+              then coalesce(w.week_seconds, 0) else 0 end,
+         case when p.id = auth.uid() or p.leaderboard_opt_in
+              then coalesce(wd.active_days, 0) else 0 end,
+         case when p.id = auth.uid() or p.leaderboard_opt_in
+              then coalesce(t.total_seconds, 0) else 0 end,
+         case when p.id = auth.uid() or p.leaderboard_opt_in
+              then coalesce(s.streak_days, 0) else 0 end
   from public.community_profiles p
   left join week w on w.user_id = p.id
   left join wdays wd on wd.user_id = p.id
@@ -133,7 +155,10 @@ begin
   -- simply carries zero aggregates. Clients list them unranked instead of
   -- hiding a real friend.
   where p.id in (select id from eligible)
-  order by coalesce(w.week_seconds, 0) desc, p.display_name
+  order by
+    case when p.id = auth.uid() or p.leaderboard_opt_in
+         then coalesce(w.week_seconds, 0) else 0 end desc,
+    p.display_name
   limit 100;
 end;
 $$;

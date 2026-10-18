@@ -676,16 +676,6 @@ class CommunityScreen extends ConsumerWidget {
             ),
           ),
         ],
-        if (data.friendIds.isEmpty && ranked.length <= 6) ...[
-          const SizedBox(height: 10),
-          Text(
-            ranked.isNotEmpty && CommunityDemo.isDemoId(ranked.first.memberId)
-                ? 'Showing demo friends for layout preview.'
-                : 'Tip: friends appear here once they accept your invite and share a fresh code.',
-            style: AppTextStyles.secondary12,
-            textAlign: TextAlign.center,
-          ),
-        ],
       ],
     );
   }

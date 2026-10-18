@@ -355,6 +355,10 @@ void main() {
       find.text('Invite Friends & Start Competing'),
       300,
     );
+    // The leaderboard is shorter now that the "Tip:" line is gone, so make
+    // sure the button is actually on-screen before tapping it.
+    await tester.ensureVisible(find.text('Invite Friends & Start Competing'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Invite Friends & Start Competing'));
     await tester.pumpAndSettle();
     expect(
@@ -451,6 +455,51 @@ void main() {
     await tester.scrollUntilVisible(find.text('Leaderboard'), 300);
     expect(find.text('Leaderboard'), findsOneWidget);
     expect(find.text('Waiting for shared data'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    // The removed instructional "Tip:" text must stay gone.
+    expect(find.textContaining('Tip:'), findsNothing);
+  });
+
+  testWidgets('Community picks up a friendship accepted on the other phone', (
+    tester,
+  ) async {
+    final remote = _ZeroProgressRemote()..friends.clear();
+
+    await pumpCommunity(
+      tester,
+      overrides: [
+        socialLiveProvider.overrideWithValue(true),
+        backendUserIdProvider.overrideWithValue('me'),
+        socialRemoteProvider.overrideWithValue(remote),
+      ],
+    );
+    await tester.scrollUntilVisible(find.text('Leaderboard'), 300);
+    expect(find.text('Brother'), findsNothing, reason: 'not friends yet');
+
+    // The other phone accepts the invitation: the server now reports it.
+    remote.friends.add(
+      const RemoteFriend(
+        userId: 'brother',
+        displayName: 'Brother',
+        avatarId: 'avatar1',
+        blobVariant: 1,
+        leaderboardOptIn: true,
+      ),
+    );
+
+    // Leaving the tab and coming back must refresh MEMBERSHIP, not just
+    // the progress rows — no sign-out, no reinstall.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await pumpCommunity(
+      tester,
+      overrides: [
+        socialLiveProvider.overrideWithValue(true),
+        backendUserIdProvider.overrideWithValue('me'),
+        socialRemoteProvider.overrideWithValue(remote),
+      ],
+    );
+    await tester.scrollUntilVisible(find.text('Brother'), 400);
+    expect(find.text('Brother'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 }
