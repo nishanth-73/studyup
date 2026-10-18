@@ -16,6 +16,7 @@ const root = path.join(__dirname, '..');
 const indexPath = path.join(root, 'public', 'index.html');
 const apkPath = path.join(root, 'public', 'apk.json');
 const vercelPath = path.join(root, 'vercel.json');
+const assetsDir = path.join(root, 'public', 'assets');
 
 const index = fs.readFileSync(indexPath, 'utf8');
 const apk = JSON.parse(fs.readFileSync(apkPath, 'utf8'));
@@ -31,18 +32,212 @@ test('landing: core meta and accessibility basics are present', () => {
   assert.match(index, /aria-live="polite"/);
 });
 
-test('landing: uses all four decorative images', () => {
-  for (let i = 1; i <= 4; i += 1) {
-    const ref = `/assets/web-${i}.png`;
-    assert.ok(index.includes(ref), `index.html must reference ${ref}`);
-    const file = path.join(root, 'public', 'assets', `web-${i}.png`);
-    const stat = fs.statSync(file);
-    assert.ok(stat.size > 10_000, `web-${i}.png looks broken (too small)`);
-    assert.ok(
-      stat.size < 1_000_000,
-      `web-${i}.png exceeds the 1 MB budget (transparent 1024px renders)`,
-    );
+test('landing: the decorative web images are gone for good', () => {
+  // No image markup and no decoration layer that existed only to host them.
+  assert.doesNotMatch(index, /<img\b/i, 'no <img> tags may come back');
+  assert.doesNotMatch(index, /class="art"/, 'the .art layer must stay removed');
+  assert.doesNotMatch(index, /\.art\b/, 'no .art CSS rules may come back');
+  assert.doesNotMatch(index, /@keyframes\s+float/, 'no float keyframes');
+  assert.doesNotMatch(index, /\/assets\//, 'nothing may reference /assets/');
+  // ...and the files themselves are deleted, not just unlinked.
+  if (fs.existsSync(assetsDir)) {
+    const leftovers = fs
+      .readdirSync(assetsDir)
+      .filter((name) => /^web-[1-4]\./i.test(name));
+    assert.deepEqual(leftovers, [], 'web-1..4 image files must be deleted');
   }
+});
+
+test('landing: invitation page offers Download only via the configured URL', () => {
+  // The button exists but starts hidden: JavaScript reveals it only after
+  // apk.json yields a valid https destination.
+  assert.match(index, /id="downloadInInvite"[^>]*hidden/);
+  assert.match(index, /id="downloadMissing"/, 'unconfigured state must be shown');
+  assert.match(index, /No download destination is/);
+  // The code is carried into the download URL when one is configured.
+  assert.match(index, /withInviteCode/);
+  assert.match(index, /'invite=' \+ encodeURIComponent/);
+  // Reopening the same link is the documented hand-off after installing.
+  assert.match(index, /id="reopenHint"/);
+  assert.match(index, /reopen this/i);
+  // No invented store listing anywhere in the page.
+  assert.doesNotMatch(index, /play\.google\.com/i);
+  assert.doesNotMatch(index, /market:\/\/links/i);
+  assert.doesNotMatch(index, /apps\.apple\.com/i);
+});
+
+test('landing: one clean invitation URL, no payloads or secrets', () => {
+  assert.match(index, /\(\?:i\|invite\)/, 'token path parsing');
+  assert.doesNotMatch(index, /SUP1/, 'never share the offline SUP1 payload');
+  assert.doesNotMatch(index, /service_role/i);
+  assert.doesNotMatch(index, /eyJ[A-Za-z0-9_-]{10,}/, 'no JWT-looking string');
+});
+
+// ---------------------------------------------------------------------------
+// Behavioural tests: the page script is executed against a stubbed DOM so the
+// two recipient paths are covered for real (not only by string matching).
+//   installed  -> App Link/intent hands the code straight to the app
+//   missing    -> a Download button appears, carrying the invitation code
+// ---------------------------------------------------------------------------
+const script = index.match(/<script>([\s\S]*?)<\/script>/)[1];
+// id -> the opening tag it belongs to, so a stub can start out with the
+// same `hidden` state the markup declares.
+const elementTags = [...index.matchAll(/<[^>]*\sid="([^"]+)"[^>]*>/g)].map((m) => ({
+  id: m[1],
+  tag: m[0],
+}));
+
+function setGlobal(name, value) {
+  Object.defineProperty(global, name, {
+    value,
+    configurable: true,
+    writable: true,
+  });
+}
+
+async function runLanding({ path: pagePath, userAgent, apk }) {
+  const makeEl = (id, tag) => ({
+    id,
+    hidden: /\shidden\b/.test(tag || ''),
+    textContent: '',
+    href: '',
+    disabled: /\sdisabled\b/.test(tag || ''),
+    addEventListener() {},
+  });
+  const els = new Map();
+  for (const { id, tag } of elementTags) els.set(id, makeEl(id, tag));
+  const get = (id) => {
+    if (!els.has(id)) els.set(id, makeEl(id, ''));
+    return els.get(id);
+  };
+  const saved = {};
+  for (const name of ['document', 'location', 'navigator', 'fetch']) {
+    saved[name] = Object.getOwnPropertyDescriptor(global, name);
+  }
+  setGlobal('document', { getElementById: get });
+  setGlobal('location', {
+    pathname: pagePath,
+    href: `https://invite.example.com${pagePath}`,
+  });
+  setGlobal('navigator', { userAgent });
+  setGlobal('fetch', () =>
+    Promise.resolve({ ok: true, json: () => Promise.resolve(apk) }),
+  );
+  try {
+    // eslint-disable-next-line no-new-func
+    new Function(script)();
+    // Flush the fetch().then().then() chain started by the script.
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+  } finally {
+    for (const name of ['document', 'location', 'navigator', 'fetch']) {
+      if (saved[name]) Object.defineProperty(global, name, saved[name]);
+      else delete global[name];
+    }
+  }
+  return els;
+}
+
+const TOKEN = 'aa11bb22cc33dd44ee55ff6600112233445566778899aabbccddeeff00112233';
+const CONFIGURED = {
+  apkUrl: 'https://downloads.example.com/studyup.apk',
+  version: '1.0.0',
+  sizeMb: 12,
+  note: 'ok',
+};
+const ANDROID =
+  'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120 Mobile';
+
+test('landing: invite link with the app installed hands the code to the app', async () => {
+  const els = await runLanding({
+    path: `/i/${TOKEN}`,
+    userAgent: ANDROID,
+    apk: CONFIGURED,
+  });
+  assert.equal(els.get('inviteBox').hidden, false);
+  assert.equal(els.get('openApp').hidden, false);
+  // The custom-scheme hand-off carries the invitation code itself.
+  assert.match(els.get('openApp').href, /^intent:\/\/invite\//);
+  assert.ok(els.get('openApp').href.includes(TOKEN));
+  // The browser fallback sends the recipient back to this same link.
+  assert.match(els.get('openApp').href, /S\.browser_fallback_url=/);
+});
+
+test('landing: invite link without the app offers a real Download button', async () => {
+  const els = await runLanding({
+    path: `/i/${TOKEN}`,
+    userAgent: ANDROID,
+    apk: CONFIGURED,
+  });
+  assert.equal(els.get('downloadInInvite').hidden, false);
+  // The invitation code survives the download hand-off.
+  assert.equal(
+    els.get('downloadInInvite').href,
+    `https://downloads.example.com/studyup.apk?invite=${TOKEN}`,
+  );
+  assert.match(els.get('downloadInInvite').textContent, /Download StudyUp/);
+  assert.equal(els.get('reopenHint').hidden, false, 'reopen hint shown');
+  assert.equal(els.get('downloadMissing').hidden, true);
+  assert.equal(els.get('apkLink').href, els.get('downloadInInvite').href);
+  assert.equal(els.get('apkSoon').hidden, true);
+});
+
+test('landing: a store URL with an existing query keeps the code', async () => {
+  const els = await runLanding({
+    path: `/i/${TOKEN}`,
+    userAgent: ANDROID,
+    apk: { ...CONFIGURED, apkUrl: 'https://play.example.com/store/apps/details?id=com.studyup.studyup&hl=en' },
+  });
+  assert.equal(
+    els.get('downloadInInvite').href,
+    'https://play.example.com/store/apps/details?id=com.studyup.studyup&hl=en' +
+      `&invite=${TOKEN}`,
+  );
+});
+
+test('landing: no configured download destination never invents a URL', async () => {
+  for (const apk of [
+    { ...CONFIGURED, apkUrl: '' },
+    { ...CONFIGURED, apkUrl: 'http://insecure.example.com/app.apk' },
+    { ...CONFIGURED, apkUrl: 'https://example.com/debug-app.apk' },
+    null,
+  ]) {
+    const els = await runLanding({ path: `/i/${TOKEN}`, userAgent: ANDROID, apk });
+    assert.equal(els.get('downloadInInvite').hidden, true, 'no button');
+    assert.equal(els.get('downloadInInvite').href, '', 'no URL invented');
+    assert.equal(els.get('downloadMissing').hidden, false, 'config gap stated');
+    assert.equal(els.get('apkSoon').hidden, false);
+  }
+});
+
+test('landing: malformed invite path shows an actionable message', async () => {
+  const els = await runLanding({ path: '/i/short', userAgent: ANDROID, apk: CONFIGURED });
+  assert.equal(els.get('inviteBox').hidden, false);
+  assert.equal(els.get('inviteTitle').textContent, 'Invitation unavailable');
+  assert.match(els.get('inviteMessage').textContent, /malformed/);
+  assert.equal(els.get('copyLink').hidden, true);
+  assert.equal(els.get('openApp').hidden, true);
+  assert.equal(els.get('downloadInInvite').hidden, true);
+});
+
+test('landing: the plain (non-invite) landing stays untouched', async () => {
+  const els = await runLanding({ path: '/', userAgent: ANDROID, apk: CONFIGURED });
+  assert.equal(els.get('inviteBox').hidden, true);
+  assert.equal(els.get('openApp').hidden, true);
+  assert.equal(els.get('downloadInInvite').hidden, true);
+  // The download link still works, just without an invitation code.
+  assert.equal(els.get('apkLink').href, CONFIGURED.apkUrl);
+});
+
+test('landing: desktop recipients get a download, never an intent link', async () => {
+  const els = await runLanding({
+    path: `/i/${TOKEN}`,
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120',
+    apk: CONFIGURED,
+  });
+  assert.equal(els.get('openApp').hidden, true, 'no intent link off Android');
+  assert.equal(els.get('downloadInInvite').hidden, false);
+  assert.ok(els.get('downloadInInvite').href.includes(TOKEN));
 });
 
 test('landing: every subresource is same-origin or a data URI', () => {

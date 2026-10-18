@@ -13,6 +13,7 @@ import 'package:studyup/features/social/data/social_remote.dart';
 /// Invitation landing contract:
 /// - opening a link never creates a friendship — only the explicit
 ///   "Accept invitation" tap calls the authenticated accept RPC;
+/// - "Decline" leaves without accepting: no accept call, no stashed token;
 /// - signed-out recipients are asked to sign in and the token is stashed
 ///   (never consumed) so it survives the auth flow;
 /// - expired/revoked/used/invalid tokens, self-invites, existing
@@ -208,12 +209,56 @@ void main() {
 
     expect(remote.previewCalls, [shortToken]);
     expect(
-      find.text(
-        'Maya wants to be your study buddy. Accept to connect — nothing happens until you tap Accept.',
-      ),
+      find.text('Maya invited you to join StudyUp.'),
       findsOneWidget,
     );
     expect(remote.acceptCalls, isEmpty);
+  });
+
+  testWidgets('accept and decline are both offered, side by side', (
+    tester,
+  ) async {
+    final remote = _FakeRemote();
+    await pumpScreen(tester, remote: remote);
+    expect(find.text('Accept invitation'), findsOneWidget);
+    expect(find.text('Decline'), findsOneWidget);
+    // Merely showing the actions must not touch the server.
+    expect(remote.acceptCalls, isEmpty);
+  });
+
+  testWidgets('declining leaves without joining the Community', (tester) async {
+    final remote = _FakeRemote();
+    await pumpScreen(tester, remote: remote);
+
+    await tester.tap(find.text('Decline'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Invitation declined'), findsOneWidget);
+    // No accept call: nothing was created server-side.
+    expect(remote.acceptCalls, isEmpty);
+    expect(remote.previewCalls, [_token]);
+
+    await tester.tap(find.text('Back to StudyUp'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('HOME'), findsOneWidget);
+  });
+
+  testWidgets('declining while signed out stashes no token', (tester) async {
+    final remote = _FakeRemote();
+    await pumpScreen(tester, remote: remote, userId: null);
+    expect(find.text('Sign in / Sign up'), findsOneWidget);
+    expect(find.text('Decline'), findsOneWidget);
+
+    await tester.tap(find.text('Decline'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Invitation declined'), findsOneWidget);
+    expect(remote.acceptCalls, isEmpty);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('studyup.pendingInviteToken.v1'), isNull);
   });
 
   testWidgets('accept errors map to graceful messages', (tester) async {

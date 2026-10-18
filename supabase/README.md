@@ -37,11 +37,22 @@ are committed; the service-role key is never in the app.
 - Friends — live friends list, incoming requests (realtime),
   display-name search, send/accept/decline/cancel, remove; privacy
   toggles mirrored server-side.
-- Invitations — `POST /invite/:token` route + accept screen (preview,
-  login handoff, single-use token validation, self/duplicate/expiry
-  handling, copy-link fallback). Native share sheet via `share_plus`.
-   Android App Link intent-filter (primary host the Vercel project
-   domain `studyup-4x7z-medurinishanth78-6030s-projects.vercel.app`;
+- Invitations — one shareable link per invitation,
+  `https://HOST/i/<code>` (32-char hex code, never the offline `SUP1`
+  payload): the browser landing page (`public/index.html`) for recipients
+  without the app — invitation text, a **Download StudyUp** button driven
+  by `public/apk.json` (code preserved as `?invite=<code>`), and an
+  explicit "not configured yet" note instead of any invented store link.
+  With the app installed the same link opens the app (Android App Links,
+  custom-scheme `studyup://invite/` fallback) onto the accept screen,
+  which shows the inviter's name and offers **Accept invitation** /
+  **Decline**. Opening a link never accepts: the friendship is created
+  server-side only by `accept_invitation` after the user taps Accept, and
+  `create_invitation` stamps `created_by = auth.uid()` so neither the
+  code nor a tampered URL can join someone else's Community. Native share
+  sheet via `share_plus`.
+   Android App Link intent-filter (primary host the main production
+   domain `studyup-4x7z.vercel.app`;
    earlier `studyup-feedback-api.vercel.app` and legacy
    `invite.studyup.app` also accepted, autoVerify) plus
    `studyup://invite/` fallback;
@@ -88,7 +99,12 @@ are committed; the service-role key is never in the app.
       com.studyup.studyup://login-callback/)`, so no extra Android
       config is needed beyond the intent-filter already present.
 4. SQL editor → run `supabase/migrations/20261015_community.sql`,
-   then `supabase/migrations/20261102_social_backend.sql`, in order.
+   then `supabase/migrations/20261102_social_backend.sql`, then
+   `supabase/migrations/20261104_hardening_fix.sql`, in that order.
+   The third file is **required**: without it
+   `invitation_preview`/`accept_invitation` fail with
+   `"function digest(text, unknown) does not exist"`, so the whole
+   invitation flow is broken.
 5. Run the app with your values (never commit them):
    ```sh
    flutter run \
@@ -112,17 +128,17 @@ are committed; the service-role key is never in the app.
 These cannot be completed without your domain + signing keys + store
 presence. The app is fully coded for them; only configuration remains.
 
-1. **Invite domain**: the App Links host is
-   `studyup-4x7z-medurinishanth78-6030s-projects.vercel.app` (the
-   stable Vercel project domain — `INVITE_HOST` default; override with
-   `--dart-define=INVITE_HOST=...` for a custom domain). Use the stable
-   project domain, never a per-deployment URL
+1. **Invite domain**: the App Links host is the main production
+   domain `studyup-4x7z.vercel.app` (`INVITE_HOST` default; override with
+   `--dart-define=INVITE_HOST=...` for a custom domain). Use that stable
+   domain, never a per-deployment URL
    (`studyup-4x7z-<hash>-...vercel.app`): deployment URLs change on
-   every deploy. FIRST disable Vercel Deployment Protection (Project →
+   every deploy, so previously shared links would keep pointing at an
+   older build. FIRST disable Vercel Deployment Protection (Project →
    Settings → Deployment Protection → Vercel Authentication →
    Disabled): while it is on, anonymous visitors, Android App Links
    verification and the app's feedback requests are all redirected to
-   a Vercel login page. The same Vercel deployment must serve
+   a Vercel login page. The same Vercel project must serve
    `/.well-known/assetlinks.json`; `public/.well-known/assetlinks.json`
    is the deployed copy (kept identical to
    `supabase/assetlinks/assetlinks.json`; `node --test
@@ -160,11 +176,19 @@ presence. The app is fully coded for them; only configuration remains.
 3. **Store listing**: publish (or draft) the Play listing; the web
    fallback page and share text should point at it. Set
    `public/apk.json → apkUrl` (https, never a debug build) to switch the
-   landing page's "coming soon" button into a real download link.
-   Deferred
-   attribution: a fresh install from a link does NOT auto-recover the
-   token (no install-referrer wiring) — the recipient re-opens the link
-   or pastes the token in Friends → Enter code (kept as fallback).
+   landing page's "no download URL configured yet" note into a real
+   **Download StudyUp** button. Until that value is valid the page shows
+   the configuration gap explicitly — it never invents a store listing
+   link.
+   Invitation hand-off without the app: the invite link
+   (`https://HOST/i/<code>`) opens the browser page, which shows the
+   invitation, a Download button and — when a destination is configured
+   — the code appended as `?invite=<code>` so it survives the download.
+   Deferred attribution: Android does not hand that code back to the app
+   automatically (no install-referrer wiring), so the documented path is
+   *reopen the same link after installing* (the App Link then opens the
+   app straight onto the invitation) or paste the code in
+   Friends → Enter code (kept as fallback).
 4. **Verify on two devices**: sign in as A, share invite → B taps link
    (app opens to the accept screen), B signs in (pending token
    resumes), B accepts → both list each other; study on both devices,
@@ -226,7 +250,7 @@ never talks to api.resend.com and holds no email secrets.
    not found"}`; the app now detects exactly that, keeps the draft, and
    retries the same submission against `FEEDBACK_API_URL` when set,
    otherwise the hosted default
-   `https://studyup-4x7z-medurinishanth78-6030s-projects.vercel.app/api/feedback`.
+   `https://studyup-4x7z.vercel.app/api/feedback`.
    Real errors a
    deployed transport answered (validation, rate limit, 5xx, timeout)
    are never retried blindly — only the never-seen-by-anyone

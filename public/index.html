@@ -48,25 +48,6 @@
       clip: rect(0 0 0 0);
       border: 0;
     }
-    .art {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 0;
-    }
-    .art img {
-      position: absolute;
-      width: clamp(120px, 17vw, 250px);
-      height: auto;
-    }
-    .art img:nth-child(1) { top: 3%; left: 2%; animation: float 9s ease-in-out infinite; }
-    .art img:nth-child(2) { top: 5%; right: 2%; width: clamp(150px, 21vw, 300px); animation: float 11s ease-in-out infinite; animation-delay: -3s; }
-    .art img:nth-child(3) { bottom: 4%; left: 5%; animation: float 10s ease-in-out infinite; animation-delay: -6s; }
-    .art img:nth-child(4) { bottom: 2%; right: 4%; width: clamp(130px, 19vw, 270px); animation: float 12s ease-in-out infinite; animation-delay: -1.5s; }
-    @keyframes float {
-      0%, 100% { transform: translateY(-6px); }
-      50% { transform: translateY(8px); }
-    }
     .page {
       position: relative;
       z-index: 1;
@@ -150,18 +131,6 @@
     }
     .foot p { margin: 0; }
     @media (max-width: 900px) {
-      .art {
-        position: static;
-        display: flex;
-        justify-content: center;
-        align-items: flex-end;
-        gap: 2vw;
-        margin-top: 18px;
-      }
-      .art img,
-      .art img:nth-child(2),
-      .art img:nth-child(4) { position: static; width: min(21vw, 110px); }
-      .art img:nth-child(n) { animation: none; }
       .page {
         min-height: auto;
         justify-content: flex-start;
@@ -169,18 +138,12 @@
       }
     }
     @media (prefers-reduced-motion: reduce) {
-      .art img { animation: none !important; }
+      * { animation: none !important; }
     }
   </style>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
-  <div class="art" aria-hidden="true">
-    <img src="/assets/web-1.png" alt="" loading="lazy" decoding="async">
-    <img src="/assets/web-2.png" alt="" loading="lazy" decoding="async">
-    <img src="/assets/web-3.png" alt="" loading="lazy" decoding="async">
-    <img src="/assets/web-4.png" alt="" loading="lazy" decoding="async">
-  </div>
 
   <main id="main" class="page">
     <h1 class="wordmark">StudyUp</h1>
@@ -189,20 +152,26 @@
       keep a streak — and cheer friends on while your raw data stays yours.</p>
 
     <section class="card" id="inviteBox" hidden aria-labelledby="inviteTitle">
-      <h2 id="inviteTitle">You're invited to StudyUp</h2>
-      <p id="inviteMessage">Invitations are single-use and only count once you tap
-        <strong>Accept</strong> inside the app. Opening this page does not
-        use it up.</p>
+      <h2 id="inviteTitle">You've been invited to join StudyUp!</h2>
+      <p id="inviteMessage">Accepting happens inside the app, only after you
+        tap <strong>Accept invitation</strong>. Opening this page does not use
+        the invitation up, and nothing is shared without your say-so.</p>
       <div class="actions">
-        <a class="btn" id="openApp" hidden>Accept invitation in StudyUp</a>
+        <a class="btn" id="openApp" hidden>Open StudyUp to accept</a>
+        <a class="btn" id="downloadInInvite" hidden rel="noopener">Download StudyUp</a>
         <button class="btn btn--ghost" id="copyLink" type="button">Copy invite link</button>
       </div>
+      <p id="downloadMissing" class="hint" hidden>No download destination is
+        configured for StudyUp yet, so there is no link we can safely send you
+        to. Ask your friend to share an install link, or check back once the app
+        is published.</p>
+      <p id="reopenHint" class="hint" hidden>After installing, reopen this
+        same link: the invitation code is kept in the address, so StudyUp opens
+        straight onto the invitation.</p>
       <p id="deviceHint" class="hint" hidden>StudyUp runs on Android. If it
-        isn't installed yet, install it first and open this link again — the
-        invitation stays valid until accepted inside the app. On a computer,
-        copy the link and send it to your phone.</p>
-      <p class="hint">Sign in inside StudyUp and accept there — your friend then
-        appears on your friends board.</p>
+        is already installed, tapping <strong>Open StudyUp</strong> goes
+        straight to the invitation. On a computer, copy the link and send it to
+        your phone.</p>
     </section>
 
     <section class="card" id="apkBox" aria-labelledby="apkTitle">
@@ -211,7 +180,7 @@
         links and in-app feedback already work today.</p>
       <div class="actions">
         <a class="btn" id="apkLink" href="#" hidden rel="noopener">Download Android APK</a>
-        <button class="btn" id="apkSoon" type="button" disabled>Android APK — coming soon</button>
+        <p id="apkSoon" class="hint" hidden>No download URL is configured yet.</p>
       </div>
     </section>
 
@@ -241,21 +210,21 @@
         document.getElementById('inviteBox').hidden = false;
         if (token) {
           document.getElementById('deviceHint').hidden = false;
+          if (isAndroid) {
+            var fallback = encodeURIComponent(location.href);
+            var openApp = document.getElementById('openApp');
+            openApp.href =
+              'intent://invite/' + token +
+              '#Intent;scheme=studyup;package=com.studyup.studyup;S.browser_fallback_url=' +
+              fallback + ';end';
+            openApp.hidden = false;
+          }
         } else {
           document.getElementById('inviteTitle').textContent =
             'Invitation unavailable';
           document.getElementById('inviteMessage').textContent =
             'This invitation link is malformed. Ask your friend to send a new invitation link.';
           document.getElementById('copyLink').hidden = true;
-        }
-        if (token && isAndroid) {
-          var fallback = encodeURIComponent(location.href);
-          var openApp = document.getElementById('openApp');
-          openApp.href =
-            'intent://invite/' + token +
-            '#Intent;scheme=studyup;package=com.studyup.studyup;S.browser_fallback_url=' +
-            fallback + ';end';
-          openApp.hidden = false;
         }
       }
 
@@ -279,26 +248,57 @@
         });
       }
 
+      function configuredDownload(cfg) {
+        if (!cfg) return '';
+        var url = typeof cfg.apkUrl === 'string' ? cfg.apkUrl : '';
+        return /^https:\/\//.test(url) && url.indexOf('debug') === -1 ? url : '';
+      }
+
+      function labelFor(cfg) {
+        var base = 'Download StudyUp';
+        if (cfg && typeof cfg.version === 'string' && cfg.version) {
+          return base + ' (' + cfg.version + ')';
+        }
+        return base;
+      }
+
+      // Keeps the invitation code inside the download URL (Play referrer /
+      // deep-link aware stores can pass it on; a direct APK link keeps it
+      // visible to us). Only ever appended to a CONFIGURED destination.
+      function withInviteCode(url, code) {
+        if (!code) return url;
+        return url + (url.indexOf('?') === -1 ? '?' : '&') +
+          'invite=' + encodeURIComponent(code);
+      }
+
       fetch('/apk.json', { cache: 'no-store' })
         .then(function (res) { return res.ok ? res.json() : null; })
         .then(function (cfg) {
-          if (!cfg) return;
           var note = document.getElementById('apkNote');
-          if (note && typeof cfg.note === 'string' && cfg.note) {
+          if (note && cfg && typeof cfg.note === 'string' && cfg.note) {
             note.textContent = cfg.note;
           }
-          var url = typeof cfg.apkUrl === 'string' ? cfg.apkUrl : '';
-          var valid = /^https:\/\//.test(url) && url.indexOf('debug') === -1;
-          if (!valid) return;
-          var link = document.getElementById('apkLink');
-          var label = 'Download Android APK';
-          if (typeof cfg.version === 'string' && cfg.version) {
-            label += ' (' + cfg.version + ')';
+          var url = configuredDownload(cfg);
+          if (!url) {
+            // Nothing configured: say so instead of inventing a store link.
+            document.getElementById('apkSoon').hidden = false;
+            if (token) {
+              document.getElementById('downloadMissing').hidden = false;
+            }
+            return;
           }
-          link.textContent = label;
-          link.href = url;
+          var link = document.getElementById('apkLink');
+          link.textContent = labelFor(cfg) + ' — APK';
+          link.href = withInviteCode(url, token);
           link.hidden = false;
           document.getElementById('apkSoon').hidden = true;
+          if (token) {
+            var inviteDownload = document.getElementById('downloadInInvite');
+            inviteDownload.textContent = labelFor(cfg);
+            inviteDownload.href = withInviteCode(url, token);
+            inviteDownload.hidden = false;
+            document.getElementById('reopenHint').hidden = false;
+          }
         })
         .catch(function () {});
     })();

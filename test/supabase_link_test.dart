@@ -21,9 +21,26 @@ void main() {
       expect(SupabaseConfig.anonKey, isEmpty);
     });
 
-    test('invite host defaults are sane placeholders', () {
-      expect(SupabaseConfig.inviteHost, isNotEmpty);
+    test('invite host defaults to the main production domain', () {
+      // No .env / dart-define: the compiled-in default is what ships.
+      expect(SupabaseConfig.inviteHost, 'studyup-4x7z.vercel.app');
       expect(SupabaseConfig.inviteScheme, isNotEmpty);
+    });
+
+    test('a generated invite link points at the production domain', () {
+      final raw = newInviteToken();
+      final link = inviteLinkFor(raw);
+      expect(link, 'https://studyup-4x7z.vercel.app/i/$raw');
+      expect(link, startsWith('https://'));
+      expect(link, isNot(contains('6030s-projects')));
+      expect(link, isNot(contains('SUP1')));
+      // The code round-trips through the link (recipient lands on the
+      // invitation screen with exactly this token).
+      expect(parseInviteToken(Uri.parse(link)), raw);
+      // Share text carries that clean URL only.
+      final message = inviteShareMessage(link);
+      expect(message, contains(link));
+      expect(message, isNot(contains('SUP1')));
     });
 
     test('.env values apply when dart-defines are absent', () {

@@ -12,10 +12,11 @@ import '../../social/data/social_providers.dart';
 import '../../social/data/social_remote.dart';
 
 /// Invitation landing: shows WHO invited the recipient and asks for an
-/// explicit Accept. Handles logged-out users (sign in first, token is
-/// preserved), expired/invalid/used tokens, self-invites, existing
+/// explicit Accept or Decline. Handles logged-out users (sign in first,
+/// token is preserved), expired/invalid/used tokens, self-invites, existing
 /// friendships, and network failures. Friendship is created server-side
-/// only after authorized acceptance — never by opening the link.
+/// only after authorized acceptance — never by opening the link, and never
+/// by declining it.
 class InviteAcceptScreen extends ConsumerStatefulWidget {
   final String token;
 
@@ -25,7 +26,7 @@ class InviteAcceptScreen extends ConsumerStatefulWidget {
   ConsumerState<InviteAcceptScreen> createState() => _InviteAcceptScreenState();
 }
 
-enum _Phase { checking, needsLogin, ready, working, done, failed }
+enum _Phase { checking, needsLogin, ready, working, done, failed, declined }
 
 class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
   _Phase _phase = _Phase.checking;
@@ -122,6 +123,28 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
     }
   }
 
+  /// Declining is purely local: nothing was created server-side yet (the
+  /// friendship only exists after an accepted, server-validated call), so
+  /// this just leaves the screen without joining the Community. The
+  /// invitation itself stays active so the inviter can share it again.
+  Future<void> _decline() async {
+    setState(() {
+      _phase = _Phase.declined;
+    });
+  }
+
+  void _leave() => context.go('/home');
+
+  Widget _declineButton() {
+    return TextButton(
+      onPressed: _decline,
+      child: Text(
+        'Decline',
+        style: AppTextStyles.caption13.copyWith(color: AppColors.cta),
+      ),
+    );
+  }
+
   String _acceptError(Object error) {
     final m = error.toString().toLowerCase();
     if (m.contains('self invite')) {
@@ -184,7 +207,7 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
         return _card(
           title: 'You\u2019re invited!',
           body:
-              '${_preview?.displayName ?? 'A friend'} invited you to compete on StudyUp. Sign in (or create an account) to accept — this invitation is saved and will resume right after.',
+              '${_preview?.displayName ?? 'A friend'} invited you to join StudyUp. Sign in (or create an account) to accept — this invitation is saved and will resume right after.',
           actions: [
             PrimaryButton(
               label: 'Sign in / Sign up',
@@ -193,13 +216,14 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
                 if (mounted) context.go('/auth');
               },
             ),
+            _declineButton(),
           ],
         );
       case _Phase.ready:
         return _card(
           title: 'You\u2019re invited!',
           body:
-              '${_preview?.displayName ?? 'A friend'} wants to be your study buddy. Accept to connect — nothing happens until you tap Accept.',
+              '${_preview?.displayName ?? 'A friend'} invited you to join StudyUp.',
           actions: [
             Row(
               children: [
@@ -222,6 +246,25 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
             ),
             const SizedBox(height: 16),
             PrimaryButton(label: 'Accept invitation', onPressed: _accept),
+            const SizedBox(height: 10),
+            _declineButton(),
+            const SizedBox(height: 12),
+            Text(
+              'Nothing happens until you tap Accept — opening this link never '
+              'joins you to anyone.',
+              style: AppTextStyles.secondary12,
+            ),
+          ],
+        );
+      case _Phase.declined:
+        return _card(
+          title: 'Invitation declined',
+          body:
+              'No worries — you have not been added to anyone\u2019s Community. '
+              '${_preview?.displayName ?? 'Your friend'}\u2019s invitation is still '
+              'valid if you change your mind.',
+          actions: [
+            PrimaryButton(label: 'Back to StudyUp', onPressed: _leave),
           ],
         );
       case _Phase.done:

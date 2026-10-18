@@ -2,5 +2,5 @@
   "apkUrl": "",
   "version": "",
   "sizeMb": null,
-  "note": "An installable Android build is on the way. Invitation links and in-app feedback already work today."
+  "note": "Download destination not configured yet. Set apkUrl to the real Play Store listing or a hosted APK (an https:// URL) — the page shows a Download button only once that value is valid, and never falls back to an invented store link. Invitation links and in-app feedback already work today."
 }

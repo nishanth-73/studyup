@@ -5,11 +5,12 @@ import '../../auth/data/auth_controller.dart';
 import 'feedback_service.dart';
 import 'supabase_feedback_service.dart';
 
-/// Public endpoint of the hosted Vercel feedback API (this repo's
-/// `api/feedback.js`). No secrets: the app only posts to this URL; Resend
-/// keys and inbox addresses stay in Vercel environment variables.
+/// Public endpoint of the hosted feedback API on the main production
+/// domain (this repo's `api/feedback.js`). No secrets: the app only posts
+/// to this URL; Resend keys and inbox addresses stay in Vercel
+/// environment variables.
 const String hostedFeedbackEndpoint =
-    'https://studyup-4x7z-medurinishanth78-6030s-projects.vercel.app/api/feedback';
+    'https://studyup-4x7z.vercel.app/api/feedback';
 
 /// Factory seams so tests can inject fakes for both transports.
 typedef SupabaseFeedbackFactory = SupabaseFeedbackService Function();

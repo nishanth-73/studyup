@@ -44,9 +44,9 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
             <!-- StudyUp invitation App Links: https://<host>/i/<token>.
-                 Primary host: studyup-4x7z-medurinishanth78-6030s-projects.vercel.app
-                 (the stable Vercel project domain — never a per-deployment
-                 URL) — the same Vercel project as /api/feedback; it publishes
+                 Primary host: studyup-4x7z.vercel.app (the main production
+                 domain — not a per-deployment URL) — the same deployment
+                 as /api/feedback; it publishes
                  /.well-known/assetlinks.json from public/ (see
                  supabase/assetlinks/assetlinks.json). Keep any previously
                  shared links working: the earlier host
@@ -58,7 +58,7 @@
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="https" android:host="studyup-4x7z-medurinishanth78-6030s-projects.vercel.app" android:pathPrefix="/i/"/>
+                <data android:scheme="https" android:host="studyup-4x7z.vercel.app" android:pathPrefix="/i/"/>
                 <data android:scheme="https" android:host="studyup-feedback-api.vercel.app" android:pathPrefix="/i/"/>
                 <data android:scheme="https" android:host="invite.studyup.app" android:pathPrefix="/i/"/>
             </intent-filter>
