@@ -59,12 +59,15 @@ class SupabaseConfig {
   static String get anonKey => _first(_defineAnonKey, _fileAnonKey);
 
   /// HTTPS host used for invitation App Links. Defaults to the Vercel
-  /// project that also serves /api/feedback and the hosted
+  /// project domain that also serves /api/feedback and the hosted
   /// /.well-known/assetlinks.json; the manifest additionally accepts the
-  /// legacy invite.studyup.app host for previously shared links.
+  /// earlier studyup-feedback-api.vercel.app host and the legacy
+  /// invite.studyup.app host for previously shared links.
   static String get inviteHost {
     final v = _first(_defineInviteHost, _fileInviteHost);
-    return v.isEmpty ? 'studyup-feedback-api.vercel.app' : v;
+    return v.isEmpty
+        ? 'studyup-4x7z-medurinishanth78-6030s-projects.vercel.app'
+        : v;
   }
 
   /// Custom-scheme fallback for invites (works without hosting).

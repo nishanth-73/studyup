@@ -13,8 +13,9 @@ import '../presentation/study_progress_controller.dart';
 ///
 /// Streak: current run of consecutive studied days (quiet today counts
 /// through yesterday) + best run, from persisted sessions.
-/// Level: 1 XP per study minute; Level N unlocks at
-/// 60 × N × (N − 1) ÷ 2 cumulative XP (L1 0, L2 60, L3 180, …).
+/// Level: earned XP (10 per goal-met day + 50 per full-goal week, kept in
+/// the persisted XpLedger) mapped through the five tier thresholds
+/// (Novice → Grandmaster) in study_gamification.dart.
 class StreakLevelRow extends ConsumerWidget {
   const StreakLevelRow({super.key});
 
@@ -30,8 +31,7 @@ class StreakLevelRow extends ConsumerWidget {
       earliestDay: earliestStudyDay(progress.sessions, today),
     );
 
-    final totalXp = totalStudyMinutes(progress.sessions, now);
-    final levelData = computeStudyLevel(totalXp);
+    final levelData = computeStudyLevel(progress.xp.totalXp);
 
     return Row(
       children: [
@@ -49,13 +49,11 @@ class StreakLevelRow extends ConsumerWidget {
         Expanded(
           child: _SummaryCard(
             icon: Icons.bolt_rounded,
-            iconColor: AppColors.cta,
+            iconColor: levelData.tier.color,
             value: '${levelData.level}',
             unit: 'Level',
-            label: 'Study level',
-            footer:
-                '${levelData.xpIntoLevel} / ${levelData.xpForNextLevel} XP',
-            progressFraction: levelData.progress,
+            label: levelData.tier.name,
+            footer: '${levelData.totalXp} XP',
           ),
         ),
       ],
@@ -64,8 +62,6 @@ class StreakLevelRow extends ConsumerWidget {
 }
 
 /// A compact summary card used by the Streak and Level displays.
-/// [progressFraction] draws a thin goal-bar beneath the footer when
-/// non-null (used for the Level card only).
 class _SummaryCard extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
@@ -73,7 +69,6 @@ class _SummaryCard extends StatelessWidget {
   final String unit;
   final String label;
   final String footer;
-  final double? progressFraction;
 
   const _SummaryCard({
     required this.icon,
@@ -82,7 +77,6 @@ class _SummaryCard extends StatelessWidget {
     required this.unit,
     required this.label,
     required this.footer,
-    this.progressFraction,
   });
 
   @override
@@ -124,19 +118,6 @@ class _SummaryCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(footer, style: AppTextStyles.caption12),
-          if (progressFraction != null) ...[
-            const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: progressFraction,
-                minHeight: 3,
-                backgroundColor: AppColors.track,
-                valueColor:
-                    const AlwaysStoppedAnimation<Color>(AppColors.cta),
-              ),
-            ),
-          ],
         ],
       ),
     );

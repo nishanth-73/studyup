@@ -5,14 +5,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:studyup/features/auth/data/auth_controller.dart';
+import 'package:studyup/features/community/data/community_models.dart';
 import 'package:studyup/features/progress/data/study_gamification.dart';
 import 'package:studyup/features/progress/data/study_session.dart';
+import 'package:studyup/features/progress/presentation/study_progress_controller.dart';
 import 'package:studyup/features/social/data/social_providers.dart';
 import 'package:studyup/features/social/data/social_remote.dart';
 
 /// Live (signed-in) Community board contract:
 /// - one friends-only board: the client never sends a scope and never
 ///   falls back to people you are not connected to;
+/// - FRIEND rows come from the server; SELF is always built from the live
+///   local sessions (the same deduped-seconds/streak/XP-ledger math as the
+///   Progress weekly card) — server self rows are ignored, so session
+///   start/pause/resume/end show up immediately without any upload;
 /// - two weeks are fetched (current + previous) so rank movement works;
 /// - server rows carry aggregates only (no tasks, sessions, or emails);
 /// - friendship/request realtime events refresh the board and friends.
@@ -81,19 +87,22 @@ ProviderContainer _container(_FakeRemote remote) => ProviderContainer(
 
 void main() {
   test('live board fetches current + previous week and maps ranked rows', () async {
+    SharedPreferences.setMockInitialValues({});
     final week = mondayOf(DateTime.now());
     final prevWeek = week.subtract(const Duration(days: 7));
     final remote = _FakeRemote();
     remote.rowsByWeek[week] = const [
+      // A stale server self row: local data is empty, so the board must
+      // show self at 0 — the ignored server figure would rank self #1.
       RemoteBoardRow(
         userId: 'me',
         displayName: 'Tester',
         avatarId: 'avatar1',
         blobVariant: 0,
-        weekSeconds: 3600,
-        activeDays: 1,
-        totalSeconds: 5400,
-        streakDays: 3,
+        weekSeconds: 999999,
+        activeDays: 9,
+        totalSeconds: 999999,
+        streakDays: 42,
       ),
       RemoteBoardRow(
         userId: 'f1',
@@ -121,11 +130,24 @@ void main() {
     final container = _container(remote);
     addTearDown(container.dispose);
 
+    // Let the local store finish loading so the board reflects the loaded
+    // (empty) session list, and no load completes after teardown.
+    final progressSub = container.listen(studyProgressProvider, (_, _) {});
+    for (
+      var i = 0;
+      i < 200 && !container.read(studyProgressProvider).isLoaded;
+      i++
+    ) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(container.read(studyProgressProvider).isLoaded, isTrue);
+
     final entries = await container.read(communityDisplayProvider(week).future);
 
     // Current week first, then the previous week — both friends-only.
     expect(remote.leaderboardWeeks, [week, prevWeek]);
-    // Ranked by real week seconds: friend 7200, self 3600.
+    // Friend 7200 (server) outranks self 0 (live local, no sessions yet);
+    // the stale server self row is never merged.
     expect(entries.map((e) => e.memberId).toList(), ['f1', 'me']);
     final nova = entries.first;
     expect(nova.displayName, 'Nova Friend');
@@ -135,6 +157,155 @@ void main() {
     final me = entries.last;
     expect(me.isSelf, isTrue);
     expect(me.rank, 2);
+    expect(me.weekSeconds, 0);
+    expect(me.streakDays, 0);
+    expect(me.level, computeStudyLevel(0).level);
+
+    progressSub.close();
+  });
+
+  test('live board self is local and live through session events, no upload', () async {
+    final now = DateTime.now();
+    final endedStart = now.subtract(const Duration(hours: 5));
+    Map<String, Object?> session({
+      required String id,
+      required DateTime start,
+      DateTime? end,
+    }) => {
+      'id': id,
+      'subjectId': 'general',
+      'subjectName': 'Daily Study',
+      'checkInTime': start.toIso8601String(),
+      'checkOutTime': end?.toIso8601String(),
+      'pausedSeconds': 0,
+      'studySegments': [
+        {
+          'startTime': start.toIso8601String(),
+          'endTime': end?.toIso8601String(),
+        },
+      ],
+    };
+    SharedPreferences.setMockInitialValues({
+      'studyup.studySessions.v1': jsonEncode([
+        session(
+          id: 's-ended',
+          start: endedStart,
+          end: endedStart.add(const Duration(hours: 1)),
+        ),
+      ]),
+      // Real XP history: level must come from the ledger (150 XP), never
+      // from the server's total-seconds approximation.
+      'studyup.xpLedger.v1': jsonEncode({
+        'days': [
+          '2026-09-01',
+          '2026-09-02',
+          '2026-09-03',
+          '2026-09-04',
+          '2026-09-05',
+          '2026-09-08',
+          '2026-09-09',
+          '2026-09-10',
+          '2026-09-11',
+          '2026-09-12',
+        ],
+        'weeks': ['2026-09-07'],
+      }),
+    });
+    final week = mondayOf(now);
+    final prevWeek = week.subtract(const Duration(days: 7));
+    final remote = _FakeRemote();
+    remote.rowsByWeek[week] = const [
+      RemoteBoardRow(
+        userId: 'me',
+        displayName: 'Tester',
+        avatarId: 'avatar1',
+        blobVariant: 0,
+        weekSeconds: 999999,
+        activeDays: 9,
+        totalSeconds: 999999,
+        streakDays: 99,
+      ),
+      RemoteBoardRow(
+        userId: 'f1',
+        displayName: 'Nova Friend',
+        avatarId: 'avatar2',
+        blobVariant: 1,
+        weekSeconds: 7200,
+        activeDays: 2,
+        totalSeconds: 7200,
+        streakDays: 4,
+      ),
+    ];
+    remote.rowsByWeek[prevWeek] = const [];
+    final container = _container(remote);
+    addTearDown(container.dispose);
+
+    final progressSub = container.listen(studyProgressProvider, (_, _) {});
+    for (
+      var i = 0;
+      i < 200 && !container.read(studyProgressProvider).isLoaded;
+      i++
+    ) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(container.read(studyProgressProvider).isLoaded, isTrue);
+    final controller = container.read(studyProgressProvider.notifier);
+    final boardSub = container.listen(communityDisplayProvider(week), (_, _) {});
+
+    Future<LeaderboardEntry> readSelf() async {
+      final entries = await container.read(
+        communityDisplayProvider(week).future,
+      );
+      expect(entries.length, 2);
+      return entries.firstWhere((e) => e.isSelf);
+    }
+
+    // Seeded ended session: 1h local, level from the XP ledger (150 XP),
+    // streak 1 — all independent of the stale server self row.
+    final seeded = await readSelf();
+    expect(seeded.weekSeconds, inInclusiveRange(3595, 3610));
+    expect(seeded.streakDays, 1);
+    expect(seeded.level, computeStudyLevel(150).level);
+    expect(seeded.level, isNot(computeStudyLevel(999999 ~/ 60).level));
+    expect(seeded.rank, 2);
+    expect(remote.upsertCalls, 0);
+
+    // start → running time joins the board with no upload.
+    await controller.startSession();
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    final running = await readSelf();
+    expect(
+      running.weekSeconds,
+      greaterThanOrEqualTo(seeded.weekSeconds),
+    );
+
+    // pause → the board stops counting; a full second later it is equal.
+    await controller.pauseSession();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    final paused = await readSelf();
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    final stillPaused = await readSelf();
+    expect(stillPaused.weekSeconds, paused.weekSeconds);
+
+    // resume → counting continues.
+    await controller.resumeSession();
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    final resumed = await readSelf();
+    expect(resumed.weekSeconds, greaterThan(stillPaused.weekSeconds));
+
+    // end → frozen, still with zero server uploads from this flow.
+    await controller.endSession();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    final ended = await readSelf();
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    final stillEnded = await readSelf();
+    expect(stillEnded.weekSeconds, ended.weekSeconds);
+    expect(remote.upsertCalls, 0);
+    // Live self never refetches the friends board (still cached).
+    expect(remote.leaderboardWeeks.length, 2);
+
+    boardSub.close();
+    progressSub.close();
   });
 
   test('server rows expose aggregates only — extra fields are ignored', () {

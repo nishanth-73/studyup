@@ -50,11 +50,11 @@ void main() {
   });
 
   group('invitation tokens', () {
-    test('generated tokens are 256-bit hex', () {
+    test('generated tokens are 128-bit hex and unique', () {
       final a = newInviteToken();
       final b = newInviteToken();
-      expect(a.length, 64);
-      expect(RegExp(r'^[0-9a-f]{64}$').hasMatch(a), isTrue);
+      expect(a.length, 32);
+      expect(RegExp(r'^[0-9a-f]{32}$').hasMatch(a), isTrue);
       expect(a, isNot(equals(b)));
     });
 
@@ -70,12 +70,29 @@ void main() {
         inviteLinkFor(raw, host: 'invite.example.com'),
         'https://invite.example.com/i/$raw',
       );
+      expect(() => inviteLinkFor('SUP1-encoded-payload'), throwsArgumentError);
+    });
+
+    test('share message contains only the friendly text and invite URL', () {
+      const link =
+          'https://invite.example.com/i/abcdef1234567890abcdef1234567890';
+      final message = inviteShareMessage(link);
+      expect(
+        message,
+        "Join me on StudyUp! Let's track our study progress and compete together: $link",
+      );
+      expect(message, isNot(contains('SUP1-')));
+      expect(message, isNot(contains('"uid"')));
     });
 
     test('parses App Links and custom-scheme URLs', () {
-      const raw = 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef12';
+      const raw = 'abcdef1234567890abcdef1234567890';
       expect(
         parseInviteToken(Uri.parse('https://invite.studyup.app/i/$raw')),
+        raw,
+      );
+      expect(
+        parseInviteToken(Uri.parse('https://invite.studyup.app/invite/$raw/')),
         raw,
       );
       expect(
@@ -86,13 +103,16 @@ void main() {
       expect(parseInviteToken(Uri.parse('studyup:///i/$raw')), raw);
     });
 
-    test('rejects junk, wrong paths, and short tokens', () {
+    test('routes malformed short tokens to app validation', () {
       expect(parseInviteToken(Uri.parse('https://x.test/i/')), isNull);
       expect(parseInviteToken(Uri.parse('https://x.test/x/abc')), isNull);
-      expect(parseInviteToken(Uri.parse('https://x.test/i/short')), isNull);
+      expect(parseInviteToken(Uri.parse('https://x.test/i/short')), 'short');
       expect(parseInviteToken(Uri.parse('studyup://invite/')), isNull);
       expect(parseInviteToken(Uri.parse('mailto:a@b.c')), isNull);
-      expect(parseInviteToken(Uri.parse('https://x.test/i/NOT-HEX!!')), isNull);
+      expect(
+        parseInviteToken(Uri.parse('https://x.test/i/NOT-HEX!!')),
+        'NOT-HEX!!',
+      );
     });
   });
 

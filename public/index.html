@@ -58,7 +58,6 @@
       position: absolute;
       width: clamp(120px, 17vw, 250px);
       height: auto;
-      mix-blend-mode: multiply;
     }
     .art img:nth-child(1) { top: 3%; left: 2%; animation: float 9s ease-in-out infinite; }
     .art img:nth-child(2) { top: 5%; right: 2%; width: clamp(150px, 21vw, 300px); animation: float 11s ease-in-out infinite; animation-delay: -3s; }
@@ -177,10 +176,10 @@
 <body>
   <a class="skip" href="#main">Skip to content</a>
   <div class="art" aria-hidden="true">
-    <img src="/assets/web-1.jpg" alt="" loading="lazy" decoding="async">
-    <img src="/assets/web-2.jpg" alt="" loading="lazy" decoding="async">
-    <img src="/assets/web-3.jpg" alt="" loading="lazy" decoding="async">
-    <img src="/assets/web-4.jpg" alt="" loading="lazy" decoding="async">
+    <img src="/assets/web-1.png" alt="" loading="lazy" decoding="async">
+    <img src="/assets/web-2.png" alt="" loading="lazy" decoding="async">
+    <img src="/assets/web-3.png" alt="" loading="lazy" decoding="async">
+    <img src="/assets/web-4.png" alt="" loading="lazy" decoding="async">
   </div>
 
   <main id="main" class="page">
@@ -191,7 +190,7 @@
 
     <section class="card" id="inviteBox" hidden aria-labelledby="inviteTitle">
       <h2 id="inviteTitle">You're invited to StudyUp</h2>
-      <p>Invitations are single-use and only count once you tap
+      <p id="inviteMessage">Invitations are single-use and only count once you tap
         <strong>Accept</strong> inside the app. Opening this page does not
         use it up.</p>
       <div class="actions">
@@ -230,6 +229,7 @@
         /^\/(?:i|invite)\/([0-9a-fA-F]{32,128})\/?$/
       );
       var token = tokenMatch ? tokenMatch[1] : null;
+      var invitePath = /^\/(?:i|invite)(?:\/|$)/.test(location.pathname);
       var isAndroid = /Android/i.test(navigator.userAgent);
       var status = document.getElementById('status');
 
@@ -237,10 +237,18 @@
         if (status) status.textContent = message;
       }
 
-      if (token) {
+      if (invitePath) {
         document.getElementById('inviteBox').hidden = false;
-        document.getElementById('deviceHint').hidden = false;
-        if (isAndroid) {
+        if (token) {
+          document.getElementById('deviceHint').hidden = false;
+        } else {
+          document.getElementById('inviteTitle').textContent =
+            'Invitation unavailable';
+          document.getElementById('inviteMessage').textContent =
+            'This invitation link is malformed. Ask your friend to send a new invitation link.';
+          document.getElementById('copyLink').hidden = true;
+        }
+        if (token && isAndroid) {
           var fallback = encodeURIComponent(location.href);
           var openApp = document.getElementById('openApp');
           openApp.href =

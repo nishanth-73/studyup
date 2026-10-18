@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../router/app_router.dart';
+import '../backend/supabase_config.dart';
 import '../../features/social/data/social_remote.dart';
 
 /// Invitation deep-link intake (App Links plus custom-scheme fallback).
@@ -41,13 +42,30 @@ class InviteLinks {
   }
 
   static void _route(Uri uri) {
-    final token = parseInviteToken(uri);
-    if (token == null) return;
+    final parsedToken = parseInviteToken(uri);
+    if (parsedToken == null && !_isInviteLink(uri)) return;
+    final token = parsedToken ?? 'invalid';
     try {
-      appRouter.go('/invite/$token');
+      appRouter.go('/invite/${Uri.encodeComponent(token)}');
     } catch (error) {
       debugPrint('Invite route failed: $error');
     }
+  }
+
+  static bool _isInviteLink(Uri uri) {
+    final scheme = uri.scheme.toLowerCase();
+    final path = uri.pathSegments.where((part) => part.isNotEmpty).toList();
+    if (scheme == 'http' || scheme == 'https') {
+      return path.isNotEmpty && (path.first == 'i' || path.first == 'invite');
+    }
+    if (scheme != 'studyup' &&
+        scheme != SupabaseConfig.inviteScheme.toLowerCase()) {
+      return false;
+    }
+    final host = uri.host.toLowerCase();
+    return host == 'invite' ||
+        host == 'i' ||
+        (path.isNotEmpty && (path.first == 'invite' || path.first == 'i'));
   }
 
   /// Stash a token across the sign-in/onboarding flow.

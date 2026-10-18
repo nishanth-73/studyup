@@ -111,34 +111,70 @@ void main() {
   });
 
   group('levels and XP', () {
-    test('thresholds follow 60*N*(N-1)/2', () {
+    test('thresholds accumulate across the five tiers', () {
       expect(xpThresholdForLevel(1), 0);
-      expect(xpThresholdForLevel(2), 60);
-      expect(xpThresholdForLevel(3), 180);
-      expect(xpThresholdForLevel(4), 360);
-      expect(xpThresholdForLevel(5), 600);
+      expect(xpThresholdForLevel(2), 100);
+      expect(xpThresholdForLevel(3), 200);
+      expect(xpThresholdForLevel(4), 300);
+      expect(xpThresholdForLevel(5), 400);
+      expect(xpThresholdForLevel(6), 500);
+      expect(xpThresholdForLevel(7), 750);
+      expect(xpThresholdForLevel(16), 3000);
+      expect(xpThresholdForLevel(31), 10500);
+      expect(xpThresholdForLevel(51), 30500);
+      expect(xpThresholdForLevel(52), 33000);
     });
 
-    test('levels derive from total XP with progress', () {
+    test('levels derive from total XP', () {
       var level = computeStudyLevel(0);
       expect(level.level, 1);
       expect(level.xpIntoLevel, 0);
-      expect(level.xpForNextLevel, 60);
+      expect(level.xpForNextLevel, 100);
+      expect(level.xpRemaining, 100);
+      expect(level.tier.name, 'Novice');
 
-      level = computeStudyLevel(200);
-      expect(level.level, 3);
-      expect(level.xpIntoLevel, 20);
-      expect(level.xpForNextLevel, 180);
-      expect(level.progress, closeTo(20 / 180, 1e-9));
+      // Mid-Novice, mid-level.
+      level = computeStudyLevel(450);
+      expect(level.level, 5);
+      expect(level.xpIntoLevel, 50);
+      expect(level.xpForNextLevel, 100);
+      expect(level.xpRemaining, 50);
+
+      // Novice -> Apprentice boundary.
+      level = computeStudyLevel(500);
+      expect(level.level, 6);
+      expect(level.tier.name, 'Apprentice');
+      expect(level.xpForNextLevel, 250);
+
+      // Multi-tier jump lands on the exact threshold.
+      level = computeStudyLevel(3200);
+      expect(level.level, 16);
+      expect(level.tier.name, 'Achiever');
+      expect(level.xpIntoLevel, 200);
+      expect(level.xpForNextLevel, 500);
+      expect(level.xpRemaining, 300);
     });
 
-    test('total minutes sum banked session durations', () {
-      final sessions = [
-        ended('a', DateTime(2026, 10, 10, 9), DateTime(2026, 10, 10, 10)),
-        ended('b', DateTime(2026, 10, 11, 9), DateTime(2026, 10, 11, 9, 30)),
-      ];
-      expect(totalStudyMinutes(sessions, DateTime(2026, 10, 12)), 90);
-      expect(totalStudyMinutes(const [], DateTime(2026, 10, 12)), 0);
+    test('zero and negative XP sit at Level 1', () {
+      for (final xp in [0, -5]) {
+        final level = computeStudyLevel(xp);
+        expect(level.level, 1);
+        expect(level.totalXp, xp < 0 ? 0 : xp);
+      }
+    });
+
+    test('tier boundaries map to the right band', () {
+      expect(studyTierForLevel(1).name, 'Novice');
+      expect(studyTierForLevel(5).name, 'Novice');
+      expect(studyTierForLevel(6).name, 'Apprentice');
+      expect(studyTierForLevel(15).name, 'Apprentice');
+      expect(studyTierForLevel(16).name, 'Achiever');
+      expect(studyTierForLevel(30).name, 'Achiever');
+      expect(studyTierForLevel(31).name, 'Master');
+      expect(studyTierForLevel(50).name, 'Master');
+      expect(studyTierForLevel(51).name, 'Grandmaster');
+      expect(studyTierForLevel(500).name, 'Grandmaster');
+      expect(studyTiers, hasLength(5));
     });
 
     test('earliest day bounds history', () {

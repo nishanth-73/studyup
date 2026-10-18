@@ -31,14 +31,17 @@ test('landing: core meta and accessibility basics are present', () => {
   assert.match(index, /aria-live="polite"/);
 });
 
-test('landing: uses all four optimized decorative images', () => {
+test('landing: uses all four decorative images', () => {
   for (let i = 1; i <= 4; i += 1) {
-    const ref = `/assets/web-${i}.jpg`;
+    const ref = `/assets/web-${i}.png`;
     assert.ok(index.includes(ref), `index.html must reference ${ref}`);
-    const file = path.join(root, 'public', 'assets', `web-${i}.jpg`);
+    const file = path.join(root, 'public', 'assets', `web-${i}.png`);
     const stat = fs.statSync(file);
-    assert.ok(stat.size > 10_000, `web-${i}.jpg looks broken (too small)`);
-    assert.ok(stat.size < 400_000, `web-${i}.jpg exceeds the 400 KB budget`);
+    assert.ok(stat.size > 10_000, `web-${i}.png looks broken (too small)`);
+    assert.ok(
+      stat.size < 1_000_000,
+      `web-${i}.png exceeds the 1 MB budget (transparent 1024px renders)`,
+    );
   }
 });
 
@@ -74,6 +77,12 @@ test('landing: invitation mode is token-guarded and Android-only', () => {
   assert.match(index, /package=com\.studyup\.studyup/);
   assert.match(index, /S\.browser_fallback_url=/);
   assert.match(index, /navigator\.clipboard/);
+});
+
+test('landing: malformed invite paths show a safe, actionable error', () => {
+  assert.match(index, /var invitePath =/);
+  assert.match(index, /Invitation unavailable/);
+  assert.match(index, /This invitation link is malformed/);
 });
 
 test('landing: apk.json is a safe placeholder until a release URL exists', () => {

@@ -18,7 +18,8 @@ import 'package:studyup/features/social/data/social_remote.dart';
 /// - expired/revoked/used/invalid tokens, self-invites, existing
 ///   friendships and pending requests all surface as clear messages;
 /// - a successful accept refreshes the friends + leaderboard providers.
-const _token = 'aa11bb22cc33dd44ee55ff6600112233445566778899aabbccddeeff00112233';
+const _token =
+    'aa11bb22cc33dd44ee55ff6600112233445566778899aabbccddeeff00112233';
 
 class _FakeRemote extends SocialRemote {
   _FakeRemote({
@@ -71,11 +72,12 @@ void main() {
   Future<void> pumpScreen(
     WidgetTester tester, {
     required _FakeRemote remote,
+    String token = _token,
     String? userId = 'me',
     List<Override> extraOverrides = const [],
   }) async {
     final router = GoRouter(
-      initialLocation: '/invite/$_token',
+      initialLocation: '/invite/$token',
       routes: [
         GoRoute(
           path: '/invite/:token',
@@ -193,6 +195,27 @@ void main() {
     expect(find.text('COMMUNITY'), findsOneWidget);
   });
 
+  testWidgets('recipient recovers inviter from a short invitation token', (
+    tester,
+  ) async {
+    final shortToken = newInviteToken();
+    final link = inviteLinkFor(shortToken);
+    final recoveredToken = parseInviteToken(Uri.parse(link));
+    expect(recoveredToken, shortToken);
+
+    final remote = _FakeRemote();
+    await pumpScreen(tester, remote: remote, token: recoveredToken!);
+
+    expect(remote.previewCalls, [shortToken]);
+    expect(
+      find.text(
+        'Maya wants to be your study buddy. Accept to connect — nothing happens until you tap Accept.',
+      ),
+      findsOneWidget,
+    );
+    expect(remote.acceptCalls, isEmpty);
+  });
+
   testWidgets('accept errors map to graceful messages', (tester) async {
     for (final (error, expected) in const [
       ('self invite', 'You cannot accept your own invitation.'),
@@ -228,9 +251,14 @@ void main() {
           friendsBuilds++;
           return const <RemoteFriend>[];
         }),
-        communityDisplayProvider(week).overrideWith((ref) {
+        // The accept flow refetches the friends-board layer; self stays
+        // fully local/live and is merged without any server refresh.
+        remoteFriendsBoardProvider(week).overrideWith((ref) {
           boardBuilds++;
-          return const <LeaderboardEntry>[];
+          return (
+            current: const <LeaderboardEntry>[],
+            previous: const <LeaderboardEntry>[],
+          );
         }),
       ],
     );
@@ -239,7 +267,7 @@ void main() {
     );
     container.listen(remoteFriendsProvider, (_, _) {}, fireImmediately: true);
     container.listen(
-      communityDisplayProvider(week),
+      remoteFriendsBoardProvider(week),
       (_, _) {},
       fireImmediately: true,
     );

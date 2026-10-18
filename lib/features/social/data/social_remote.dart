@@ -103,10 +103,10 @@ class InvitePreview {
   });
 }
 
-/// Generates an unpredictable 256-bit invitation secret (hex).
+/// Generates an unpredictable 128-bit invitation secret (hex).
 String newInviteToken() {
   final random = Random.secure();
-  final bytes = List<int>.generate(32, (_) => random.nextInt(256));
+  final bytes = List<int>.generate(16, (_) => random.nextInt(256));
   return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 }
 
@@ -117,12 +117,25 @@ String hashInviteToken(String raw) =>
 /// Builds the shareable invitation URL for a raw token.
 String inviteLinkFor(String rawToken, {String? host}) {
   final h = (host ?? SupabaseConfig.inviteHost).trim();
-  return 'https://$h/i/$rawToken';
+  if (!_looksLikeServerInviteToken(rawToken)) {
+    throw ArgumentError.value(rawToken, 'rawToken', 'Invalid invitation token');
+  }
+  if (h.isEmpty || h.contains('/') || h.contains(':')) {
+    throw ArgumentError.value(host, 'host', 'Expected an invitation host name');
+  }
+  return Uri.https(h, '/i/$rawToken').toString();
 }
+
+/// Friendly share-sheet text. Only the app link is included, never a local
+/// SUP1 payload or inviter profile data.
+String inviteShareMessage(String link) =>
+    "Join me on StudyUp! Let's track our study progress and compete together: $link";
 
 /// Parses an invitation token from an incoming link. Accepts an App Link
 /// of the form `https://HOST/i/TOKEN` (any host — the token matters) and
 /// the custom scheme `studyup://invite/TOKEN` (or `/i/TOKEN`).
+/// Syntactically invalid-but-safe tokens are returned to the invitation
+/// screen so the server can show its friendly invalid-link state.
 /// Returns null for anything else (never throws).
 String? parseInviteToken(Uri uri) {
   try {
@@ -131,21 +144,24 @@ String? parseInviteToken(Uri uri) {
       final segs = uri.pathSegments.where((s) => s.isNotEmpty).toList();
       final host = uri.host.toLowerCase();
       if (host == 'invite' || host == 'i') {
-        if (segs.isNotEmpty && _looksLikeToken(segs.first)) {
+        if (segs.length == 1 && _isInviteTokenCandidate(segs.first)) {
           return segs.first;
         }
         return null;
       }
       if (segs.length >= 2 &&
           (segs[0] == 'invite' || segs[0] == 'i') &&
-          _looksLikeToken(segs[1])) {
+          segs.length == 2 &&
+          _isInviteTokenCandidate(segs[1])) {
         return segs[1];
       }
       return null;
     }
     if (uri.scheme == 'https' || uri.scheme == 'http') {
-      final segs = uri.pathSegments;
-      if (segs.length == 2 && segs[0] == 'i' && _looksLikeToken(segs[1])) {
+      final segs = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+      if (segs.length == 2 &&
+          (segs[0] == 'i' || segs[0] == 'invite') &&
+          _isInviteTokenCandidate(segs[1])) {
         return segs[1];
       }
       return null;
@@ -156,7 +172,12 @@ String? parseInviteToken(Uri uri) {
   }
 }
 
-bool _looksLikeToken(String s) =>
+bool _isInviteTokenCandidate(String s) =>
+    s.isNotEmpty &&
+    s.length <= 128 &&
+    !RegExp(r'[/\\\u0000-\u001f]').hasMatch(s);
+
+bool _looksLikeServerInviteToken(String s) =>
     s.length >= 32 && s.length <= 128 && RegExp(r'^[0-9a-fA-F]+$').hasMatch(s);
 
 /// Splits one session's segments into per-local-day buckets for the
@@ -199,6 +220,8 @@ class SocialRemote {
   SocialRemote(this._client);
 
   final SupabaseClient _client;
+
+  String get userId => _uid;
 
   String get _uid {
     final id = _client.auth.currentUser?.id;
@@ -418,7 +441,9 @@ class SocialRemote {
   /// Weekly friends board from [leaderboard_scope]: self + accepted
   /// friends, opted-in only, server-computed aggregates. The app exposes
   /// the friends scope only — the public board is intentionally not shown.
-  Future<List<RemoteBoardRow>> leaderboard({required DateTime weekStart}) async {
+  Future<List<RemoteBoardRow>> leaderboard({
+    required DateTime weekStart,
+  }) async {
     final start = weekStart.toUtc().toIso8601String();
     final end = weekStart
         .add(const Duration(days: 7))

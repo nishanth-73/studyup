@@ -108,7 +108,7 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
       // (the realtime channel also covers this, but cannot be relied on
       // while offline/blocked).
       ref.invalidate(remoteFriendsProvider);
-      ref.invalidate(communityDisplayProvider);
+      ref.invalidate(remoteFriendsBoardProvider);
       setState(() {
         _phase = _Phase.done;
         _friendName = name;

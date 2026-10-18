@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -21,14 +22,14 @@ import 'study_progress_controller.dart';
 import 'streak_level_summary.dart';
 import '../../svg_art/presentation/svg_art.dart';
 
-String _dkey(DateTime d) => '${d.year}-${d.month}-${d.day}';
-
 String _fmtDur(int minutes) {
   if (minutes < 60) return '${minutes}m';
   final h = minutes ~/ 60;
   final r = minutes % 60;
   return r == 0 ? '${h}h' : '${h}h ${r}m';
 }
+
+String _dkey(DateTime d) => '${d.year}-${d.month}-${d.day}';
 
 DateTime _monday(DateTime day) {
   final d = DateTime(day.year, day.month, day.day);
@@ -43,6 +44,9 @@ class ProgressScreen extends ConsumerStatefulWidget {
 
 class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   int _tab = 0; // 0 = Proxy, 1 = Insights
+  final GlobalKey _monthlyChartCardKey = GlobalKey();
+  bool _monthlyChartVisible = false;
+  bool _visibilityCheckScheduled = false;
 
   // Today's Session artwork loop: play while running, rest frame otherwise.
   final SvgArtController _sessionArt = SvgArtController();
@@ -82,6 +86,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       final day = DateTime(current.year, current.month, current.day);
       if (day != _today) setState(() => _today = day);
     });
+    _scheduleMonthlyVisibilityCheck();
   }
 
   @override
@@ -89,6 +94,45 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     _dayWatch?.cancel();
     _sessionArt.dispose();
     super.dispose();
+  }
+
+  void _scheduleMonthlyVisibilityCheck() {
+    if (_visibilityCheckScheduled) return;
+    _visibilityCheckScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _visibilityCheckScheduled = false;
+      if (!mounted || _tab != 1) return;
+      final cardContext = _monthlyChartCardKey.currentContext;
+      if (cardContext == null) {
+        if (_monthlyChartVisible) {
+          setState(() => _monthlyChartVisible = false);
+        }
+        return;
+      }
+      final card = cardContext.findRenderObject();
+      final viewport = cardContext
+          .findAncestorRenderObjectOfType<RenderAbstractViewport>();
+      if (card is! RenderBox || !card.hasSize || viewport == null) {
+        return;
+      }
+
+      final cardRect = card.localToGlobal(Offset.zero) & card.size;
+      final viewportRect = MatrixUtils.transformRect(
+        viewport.getTransformTo(null),
+        viewport.paintBounds,
+      );
+      final visibleHeight =
+          (cardRect.bottom < viewportRect.bottom
+              ? cardRect.bottom
+              : viewportRect.bottom) -
+          (cardRect.top > viewportRect.top ? cardRect.top : viewportRect.top);
+      final threshold = _monthlyChartVisible ? 8.0 : 48.0;
+      final visible = visibleHeight >= threshold;
+      if (visible == _monthlyChartVisible) return;
+      setState(() {
+        _monthlyChartVisible = visible;
+      });
+    });
   }
 
   DateTime? _firstLaunchDay() {
@@ -132,39 +176,48 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
       currentIndex: 2,
       body: SafeArea(
         bottom: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-          children: [
-            Text('Your Progress', style: AppTextStyles.title30),
-            Text('Small steps. Big results.', style: AppTextStyles.secondary14),
-            const SizedBox(height: 14),
-            // Proxy | Insights switch.
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(100),
-              ),
-              child: Row(
-                children: [
-                  _seg(context, 0, 'Proxy'),
-                  _seg(context, 1, 'Insights'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            if (ref.watch(studyProgressProvider).error != null)
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (_) {
+            _scheduleMonthlyVisibilityCheck();
+            return false;
+          },
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            children: [
+              Text('Your Progress', style: AppTextStyles.title30),
               Text(
-                'Study data could not be loaded: ${ref.watch(studyProgressProvider).error}',
-                style: const TextStyle(color: AppColors.error),
+                'Small steps. Big results.',
+                style: AppTextStyles.secondary14,
               ),
-            if (_tab == 0)
-              ..._proxyBody(ref.watch(studyProgressProvider))
-            else
-              ..._insightsBody(),
-            // Scroll clearance above the floating nav (AppShell math).
-            SizedBox(height: AppShell.scrollClearance(context)),
-          ],
+              const SizedBox(height: 14),
+              // Proxy | Insights switch.
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(100),
+                ),
+                child: Row(
+                  children: [
+                    _seg(context, 0, 'Proxy'),
+                    _seg(context, 1, 'Insights'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (ref.watch(studyProgressProvider).error != null)
+                Text(
+                  'Study data could not be loaded: ${ref.watch(studyProgressProvider).error}',
+                  style: const TextStyle(color: AppColors.error),
+                ),
+              if (_tab == 0)
+                ..._proxyBody(ref.watch(studyProgressProvider))
+              else
+                ..._insightsBody(),
+              // Scroll clearance above the floating nav (AppShell math).
+              SizedBox(height: AppShell.scrollClearance(context)),
+            ],
+          ),
         ),
       ),
     );
@@ -182,7 +235,11 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           onTap: () {
             SystemSound.play(SystemSoundType.click);
             HapticFeedback.selectionClick();
-            setState(() => _tab = i);
+            setState(() {
+              _tab = i;
+              if (i != 1) _monthlyChartVisible = false;
+            });
+            _scheduleMonthlyVisibilityCheck();
           },
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
@@ -760,19 +817,9 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           const SizedBox(height: 16),
           SizedBox(
             height: 190,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 650),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.94, end: 1).animate(animation),
-                  child: child,
-                ),
-              ),
-              child: BarChart(
-                key: ValueKey('$weekMinutes$compareMinutes'),
+            child: _ChartEntrance(
+              animationKey: '$weekMinutes$compareMinutes',
+              builder: (progress, isEntering, reduceMotion) => BarChart(
                 BarChartData(
                   minY: 0,
                   maxY: 100,
@@ -858,7 +905,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
                       barsSpace: compareMinutes == null ? 0 : 3,
                       barRods: [
                         BarChartRodData(
-                          toY: percent,
+                          toY: percent * progress,
                           width: compareMinutes == null ? 32 : 14,
                           color: minutes > 0 ? AppColors.cta : AppColors.track,
                           borderRadius: const BorderRadius.vertical(
@@ -867,7 +914,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
                         ),
                         if (compareMinutes != null)
                           BarChartRodData(
-                            toY: pct(compareMinutes[index]),
+                            toY: pct(compareMinutes[index]) * progress,
                             width: 14,
                             color: compareMinutes[index] > 0
                                 ? AppColors.blue
@@ -892,7 +939,9 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
                     ),
                   ),
                 ),
-                duration: const Duration(milliseconds: 500),
+                duration: isEntering || reduceMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 650),
                 curve: Curves.easeOutCubic,
               ),
             ),
@@ -939,6 +988,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
               : compareWeekPercentages.length);
 
     return Container(
+      key: _monthlyChartCardKey,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -1007,169 +1057,169 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           const SizedBox(height: 14),
           SizedBox(
             height: 190,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 750),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.94, end: 1).animate(animation),
-                  child: child,
-                ),
-              ),
-              child: LineChart(
-                key: ValueKey('$weekPercentages$compareWeekPercentages'),
-                LineChartData(
-                  minX: 0,
-                  maxX: (pointCount - 1).toDouble(),
-                  minY: 0,
-                  maxY: 100,
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    horizontalInterval: 25,
-                    getDrawingHorizontalLine: (_) => FlLine(
-                      color: AppColors.track.withValues(alpha: 0.7),
-                      strokeWidth: 1,
-                    ),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        interval: 25,
-                        reservedSize: 30,
-                        getTitlesWidget: (value, meta) {
-                          if (!yTicks.contains(value.toInt())) {
-                            return const SizedBox.shrink();
-                          }
-                          return Text(
-                            '${value.toInt()}',
-                            style: AppTextStyles.label10.copyWith(
-                              fontSize: 9,
-                              color: AppColors.textSecondary,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 24,
-                        interval: 1,
-                        getTitlesWidget: (value, meta) {
-                          final index = value.toInt();
-                          if (index < 0 || index >= pointCount) {
-                            return const SizedBox.shrink();
-                          }
-                          return SideTitleWidget(
-                            axisSide: meta.axisSide,
-                            space: 5,
-                            child: Text(
-                              'W${index + 1}',
-                              style: AppTextStyles.label10.copyWith(
-                                fontSize: 10,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: [
-                        for (
-                          var index = 0;
-                          index < weekPercentages.length;
-                          index++
-                        )
-                          FlSpot(
-                            index.toDouble(),
-                            weekPercentages[index].clamp(0.0, 100.0),
+            child: _monthlyChartVisible
+                ? _ChartEntrance(
+                    animationKey: '$weekPercentages$compareWeekPercentages',
+                    builder: (progress, isEntering, reduceMotion) => LineChart(
+                      LineChartData(
+                        minX: 0,
+                        maxX: (pointCount - 1).toDouble(),
+                        minY: 0,
+                        maxY: 100,
+                        gridData: FlGridData(
+                          show: true,
+                          drawVerticalLine: false,
+                          horizontalInterval: 25,
+                          getDrawingHorizontalLine: (_) => FlLine(
+                            color: AppColors.track.withValues(alpha: 0.7),
+                            strokeWidth: 1,
                           ),
-                      ],
-                      isCurved: false,
-                      color: AppColors.cta,
-                      barWidth: 3,
-                      dotData: FlDotData(
-                        show: true,
-                        getDotPainter: (spot, percent, barData, index) =>
-                            FlDotCirclePainter(
-                              radius: 3,
-                              color: AppColors.cta,
-                              strokeWidth: 1.5,
-                              strokeColor: AppColors.surface,
+                        ),
+                        borderData: FlBorderData(show: false),
+                        titlesData: FlTitlesData(
+                          topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              interval: 25,
+                              reservedSize: 30,
+                              getTitlesWidget: (value, meta) {
+                                if (!yTicks.contains(value.toInt())) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Text(
+                                  '${value.toInt()}',
+                                  style: AppTextStyles.label10.copyWith(
+                                    fontSize: 9,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                );
+                              },
                             ),
-                      ),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        color: AppColors.cta.withValues(alpha: 0.12),
-                      ),
-                    ),
-                    if (compareWeekPercentages != null)
-                      LineChartBarData(
-                        spots: [
-                          for (
-                            var index = 0;
-                            index < compareWeekPercentages.length;
-                            index++
-                          )
-                            FlSpot(
-                              index.toDouble(),
-                              compareWeekPercentages[index].clamp(0.0, 100.0),
+                          ),
+                          rightTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 24,
+                              interval: 1,
+                              getTitlesWidget: (value, meta) {
+                                final index = value.toInt();
+                                if (index < 0 || index >= pointCount) {
+                                  return const SizedBox.shrink();
+                                }
+                                return SideTitleWidget(
+                                  axisSide: meta.axisSide,
+                                  space: 5,
+                                  child: Text(
+                                    'W${index + 1}',
+                                    style: AppTextStyles.label10.copyWith(
+                                      fontSize: 10,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: [
+                              for (
+                                var index = 0;
+                                index < weekPercentages.length;
+                                index++
+                              )
+                                FlSpot(
+                                  index.toDouble(),
+                                  weekPercentages[index].clamp(0.0, 100.0) *
+                                      progress,
+                                ),
+                            ],
+                            isCurved: false,
+                            color: AppColors.cta,
+                            barWidth: 3,
+                            dotData: FlDotData(
+                              show: true,
+                              getDotPainter: (spot, percent, barData, index) =>
+                                  FlDotCirclePainter(
+                                    radius: 3,
+                                    color: AppColors.cta,
+                                    strokeWidth: 1.5,
+                                    strokeColor: AppColors.surface,
+                                  ),
+                            ),
+                            belowBarData: BarAreaData(
+                              show: true,
+                              color: AppColors.cta.withValues(alpha: 0.12),
+                            ),
+                          ),
+                          if (compareWeekPercentages != null)
+                            LineChartBarData(
+                              spots: [
+                                for (
+                                  var index = 0;
+                                  index < compareWeekPercentages.length;
+                                  index++
+                                )
+                                  FlSpot(
+                                    index.toDouble(),
+                                    compareWeekPercentages[index].clamp(
+                                          0.0,
+                                          100.0,
+                                        ) *
+                                        progress,
+                                  ),
+                              ],
+                              isCurved: false,
+                              color: AppColors.blue,
+                              barWidth: 3,
+                              dotData: FlDotData(
+                                show: true,
+                                getDotPainter:
+                                    (spot, percent, barData, index) =>
+                                        FlDotCirclePainter(
+                                          radius: 3,
+                                          color: AppColors.blue,
+                                          strokeWidth: 1.5,
+                                          strokeColor: AppColors.surface,
+                                        ),
+                              ),
                             ),
                         ],
-                        isCurved: false,
-                        color: AppColors.blue,
-                        barWidth: 3,
-                        dotData: FlDotData(
-                          show: true,
-                          getDotPainter: (spot, percent, barData, index) =>
-                              FlDotCirclePainter(
-                                radius: 3,
-                                color: AppColors.blue,
-                                strokeWidth: 1.5,
-                                strokeColor: AppColors.surface,
-                              ),
+                        lineTouchData: LineTouchData(
+                          touchTooltipData: LineTouchTooltipData(
+                            getTooltipItems: (spots) => [
+                              for (final spot in spots)
+                                if (spot.x.toInt() <
+                                    (spot.barIndex == 0
+                                        ? weekPercentages.length
+                                        : compareWeekPercentages?.length ?? 0))
+                                  LineTooltipItem(
+                                    'Week ${spot.x.toInt() + 1}: '
+                                    '${formatMonthlyPercentage(spot.barIndex == 0 ? weekPercentages[spot.x.toInt()] : compareWeekPercentages![spot.x.toInt()])}',
+                                    AppTextStyles.caption12Bold.copyWith(
+                                      color: spot.bar.color ?? AppColors.cta,
+                                    ),
+                                  )
+                                else
+                                  null,
+                            ],
+                          ),
                         ),
                       ),
-                  ],
-                  lineTouchData: LineTouchData(
-                    touchTooltipData: LineTouchTooltipData(
-                      getTooltipItems: (spots) => [
-                        for (final spot in spots)
-                          if (spot.x.toInt() <
-                              (spot.barIndex == 0
-                                  ? weekPercentages.length
-                                  : compareWeekPercentages?.length ?? 0))
-                            LineTooltipItem(
-                              'Week ${spot.x.toInt() + 1}: '
-                              '${formatMonthlyPercentage(spot.barIndex == 0 ? weekPercentages[spot.x.toInt()] : compareWeekPercentages![spot.x.toInt()])}',
-                              AppTextStyles.caption12Bold.copyWith(
-                                color: spot.bar.color ?? AppColors.cta,
-                              ),
-                            )
-                          else
-                            null,
-                      ],
+                      duration: isEntering || reduceMotion
+                          ? Duration.zero
+                          : const Duration(milliseconds: 700),
+                      curve: Curves.easeOutCubic,
                     ),
-                  ),
-                ),
-                duration: const Duration(milliseconds: 650),
-                curve: Curves.easeInOutCubic,
-              ),
-            ),
+                  )
+                : const SizedBox.expand(),
           ),
           if (compareWeekPercentages != null) ...[
             const SizedBox(height: 4),
@@ -1478,7 +1528,8 @@ class _DaypartPieCard extends StatelessWidget {
               _GoalPieView(
                 mins: minutesByPart,
                 label: 'Today',
-                chartKey: 'today',
+                animationKey:
+                    'today-${comparisonDate == null ? 'none' : _dkey(comparisonDate!)}-${minutesByPart.join(',')}-$goalMinutes',
                 goal: goalMinutes,
               ),
               if (comparisonMinutesByPart != null) ...[
@@ -1486,7 +1537,8 @@ class _DaypartPieCard extends StatelessWidget {
                 _GoalPieView(
                   mins: comparisonMinutesByPart!,
                   label: '${comparisonDate!.month}/${comparisonDate!.day}',
-                  chartKey: 'compare-${_dkey(comparisonDate!)}',
+                  animationKey:
+                      'compare-${_dkey(comparisonDate!)}-${comparisonMinutesByPart!.join(',')}-$goalMinutes',
                   goal: goalMinutes,
                 ),
               ],
@@ -1602,18 +1654,96 @@ class _DaypartHelpDialog extends StatelessWidget {
   }
 }
 
+class _ChartEntrance extends StatefulWidget {
+  final Object animationKey;
+  final Widget Function(double progress, bool isEntering, bool reduceMotion)
+  builder;
+
+  const _ChartEntrance({required this.animationKey, required this.builder});
+
+  @override
+  State<_ChartEntrance> createState() => _ChartEntranceState();
+}
+
+class _ChartEntranceState extends State<_ChartEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  bool _reduceMotion = false;
+  bool _started = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 750),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (reduceMotion == _reduceMotion && _started) return;
+    _reduceMotion = reduceMotion;
+    if (_reduceMotion) {
+      _controller.value = 1;
+      _started = true;
+    } else if (!_started) {
+      _started = true;
+      _controller.forward();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChartEntrance oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animationKey == widget.animationKey) return;
+    if (_reduceMotion) {
+      _controller.value = 1;
+    } else {
+      _started = true;
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final progress = Curves.easeOutCubic.transform(_controller.value);
+        return Opacity(
+          opacity: progress,
+          child: widget.builder(
+            progress,
+            !_reduceMotion && _controller.isAnimating,
+            _reduceMotion,
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// Goal-relative donut with tap-to-inspect slices (native equivalent of a
 /// chart tooltip: tapping a slice enlarges it and names it below the pie).
 class _GoalPieView extends StatefulWidget {
   final List<int> mins;
   final String label;
-  final String chartKey;
+  final String animationKey;
   final int goal;
 
   const _GoalPieView({
     required this.mins,
     required this.label,
-    required this.chartKey,
+    required this.animationKey,
     required this.goal,
   });
 
@@ -1660,18 +1790,16 @@ class _GoalPieViewState extends State<_GoalPieView> {
           '${_DaypartPieCard._parts[i].$1}: ${_fmtDur(widget.mins[i])} · ${formatMonthlyPercentage(values[i])} of goal',
         );
       }
-      if (remaining > 0.5) {
-        final touched = _touched == sections.length;
-        sections.add(
-          PieChartSectionData(
-            value: remaining,
-            color: AppColors.track,
-            radius: touched ? 84 : 76,
-            showTitle: false,
-          ),
-        );
-        sliceTips.add('Remaining of goal');
-      }
+      final touched = _touched == sections.length;
+      sections.add(
+        PieChartSectionData(
+          value: remaining,
+          color: AppColors.track,
+          radius: touched ? 84 : 76,
+          showTitle: false,
+        ),
+      );
+      sliceTips.add('Remaining of goal');
     }
     return Expanded(
       child: Column(
@@ -1680,36 +1808,43 @@ class _GoalPieViewState extends State<_GoalPieView> {
         children: [
           SizedBox(
             height: 170,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 750),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.9, end: 1).animate(animation),
-                  child: child,
-                ),
-              ),
-              child: PieChart(
-                key: ValueKey('${widget.chartKey}${values.join(',')}'),
-                PieChartData(
-                  // Closed pie (no hole) with no gaps between periods.
-                  centerSpaceRadius: 0,
-                  sectionsSpace: 0,
-                  startDegreeOffset: -90,
-                  sections: sections,
-                  pieTouchData: PieTouchData(
-                    touchCallback: (event, response) {
-                      final i =
-                          response?.touchedSection?.touchedSectionIndex ?? -1;
-                      if (i != _touched) setState(() => _touched = i);
-                    },
+            child: _ChartEntrance(
+              animationKey: widget.animationKey,
+              builder: (progress, isEntering, reduceMotion) {
+                final animatedSections = [
+                  for (final section in sections)
+                    PieChartSectionData(
+                      value: section.value == 100 && total == 0
+                          ? 100
+                          : section.color == AppColors.track
+                          ? 100 - done * progress
+                          : section.value * progress,
+                      color: section.color,
+                      radius: section.radius,
+                      showTitle: section.showTitle,
+                    ),
+                ];
+                return PieChart(
+                  PieChartData(
+                    // Closed pie (no hole) with no gaps between periods.
+                    centerSpaceRadius: 0,
+                    sectionsSpace: 0,
+                    startDegreeOffset: -90,
+                    sections: animatedSections,
+                    pieTouchData: PieTouchData(
+                      touchCallback: (event, response) {
+                        final i =
+                            response?.touchedSection?.touchedSectionIndex ?? -1;
+                        if (i != _touched) setState(() => _touched = i);
+                      },
+                    ),
                   ),
-                ),
-                duration: const Duration(milliseconds: 650),
-                curve: Curves.easeInOutCubic,
-              ),
+                  duration: isEntering || reduceMotion
+                      ? Duration.zero
+                      : const Duration(milliseconds: 650),
+                  curve: Curves.easeInOutCubic,
+                );
+              },
             ),
           ),
           const SizedBox(height: 16),

@@ -17,31 +17,34 @@ class SessionSyncService {
   final SocialRemote _remote;
 
   static const _syncedKey = 'studyup.syncedSessionIds.v1';
-  static bool _running = false;
+  static final Set<String> _runningUsers = {};
 
-  Future<Set<String>> _syncedIds() async {
+  String _keyFor(String userId) => '$_syncedKey.$userId';
+
+  Future<Set<String>> _syncedIdsFor(String key) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getStringList(_syncedKey)?.toSet() ?? {};
+    return prefs.getStringList(key)?.toSet() ?? {};
   }
 
   /// Ids already confirmed on the server. Public so UI/providers can
   /// report an honest pending count without re-uploading.
-  Future<Set<String>> syncedIds() => _syncedIds();
+  Future<Set<String>> syncedIds() => _syncedIdsFor(_keyFor(_remote.userId));
 
-  Future<void> _markSynced(Iterable<String> ids) async {
+  Future<void> _markSynced(String key, Iterable<String> ids) async {
     final prefs = await SharedPreferences.getInstance();
-    final current = await _syncedIds();
+    final current = await _syncedIdsFor(key);
     current.addAll(ids);
-    await prefs.setStringList(_syncedKey, current.toList());
+    await prefs.setStringList(key, current.toList());
   }
 
   /// Uploads every ended local session not yet synced. Returns the
   /// number uploaded; throws nothing (callers log).
   Future<int> syncAll(List<StudySession> sessions) async {
-    if (_running) return 0;
-    _running = true;
+    final userId = _remote.userId;
+    if (!_runningUsers.add(userId)) return 0;
+    final key = _keyFor(userId);
     try {
-      final synced = await _syncedIds();
+      final synced = await _syncedIdsFor(key);
       var count = 0;
       for (final s in sessions) {
         if (s.checkOutTime == null || synced.contains(s.id)) continue;
@@ -50,6 +53,7 @@ class SessionSyncService {
       }
       if (count > 0) {
         await _markSynced(
+          key,
           sessions
               .where((s) => s.checkOutTime != null && !synced.contains(s.id))
               .map((s) => s.id)
@@ -58,19 +62,21 @@ class SessionSyncService {
       }
       return count;
     } finally {
-      _running = false;
+      _runningUsers.remove(userId);
     }
   }
 
   /// Uploads one freshly ended session immediately (best-effort).
   Future<void> syncOne(StudySession session) async {
-    if (_running || session.checkOutTime == null) return;
-    _running = true;
+    if (session.checkOutTime == null) return;
+    final userId = _remote.userId;
+    if (!_runningUsers.add(userId)) return;
+    final key = _keyFor(userId);
     try {
       await _remote.upsertSession(session);
-      await _markSynced([session.id]);
+      await _markSynced(key, [session.id]);
     } finally {
-      _running = false;
+      _runningUsers.remove(userId);
     }
   }
 }

@@ -111,6 +111,10 @@ class CommunityScreen extends ConsumerWidget {
     final weekStart = ref.watch(communityWeekProvider);
     final board = ref.watch(communityDisplayProvider(weekStart));
     return board.when(
+      // Live self updates recompute the merged board on every session
+      // event/tick: keep showing the last board while it recomputes
+      // instead of flashing a spinner.
+      skipLoadingOnReload: true,
       loading: () => ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
         children: [
@@ -128,7 +132,8 @@ class CommunityScreen extends ConsumerWidget {
         CommunityError(
           error: e,
           onRetry: () {
-            ref.invalidate(communityDisplayProvider);
+            // Retry the actual server fetch (self is always local/live).
+            ref.invalidate(remoteFriendsBoardProvider);
             ref.read(communityControllerProvider.notifier).refresh();
           },
         ),
@@ -745,35 +750,17 @@ class CommunityScreen extends ConsumerWidget {
   // ---------- 5. invite ----------
 
   Future<void> _invite(BuildContext context, WidgetRef ref) async {
-    // Signed in: a real server invitation link (single-use token, expiry,
-    // friendship created only after the recipient accepts in-app).
-    if (ref.read(socialLiveProvider)) {
-      await _inviteServerLink(context, ref);
-      return;
-    }
-    String? code;
-    try {
-      code = await ref
-          .read(communityControllerProvider.notifier)
-          .myInviteCode();
-    } catch (_) {
-      code = null;
-    }
-    if (code == null) {
-      if (!context.mounted) return;
+    if (!ref.read(socialLiveProvider)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not create an invite right now.')),
+        const SnackBar(
+          content: Text(
+            'Sign in to create a shareable invitation link. You can still share an invite code from Friends.',
+          ),
+        ),
       );
       return;
     }
-    // The code itself is the invitation: it encodes this user's identity
-    // plus a real study snapshot and resolves in Friends → Enter code.
-    // Friendship is only created after the recipient accepts there —
-    // sharing never auto-adds anyone.
-    final message =
-        'Join me on StudyUp! Let\u2019s track our study progress and compete together: $code';
-    if (!context.mounted) return;
-    await _shareMessage(context, message);
+    await _inviteServerLink(context, ref);
   }
 
   /// Server invitation flow. Creates a single-use token via RPC (only the
@@ -781,7 +768,12 @@ class CommunityScreen extends ConsumerWidget {
   /// share sheet. Falls back to clipboard; never shares a fake URL.
   Future<void> _inviteServerLink(BuildContext context, WidgetRef ref) async {
     final remote = ref.read(socialRemoteProvider);
-    if (remote == null) return;
+    if (remote == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sign in to create an invitation link.')),
+      );
+      return;
+    }
     String? raw;
     try {
       raw = await remote.createInvitation(validDays: 7);
@@ -795,9 +787,27 @@ class CommunityScreen extends ConsumerWidget {
       );
       return;
     }
-    final link = inviteLinkFor(raw);
-    final message =
-        'Join me on StudyUp! Let\u2019s track our study progress and compete together: $link';
+    late final String link;
+    try {
+      link = inviteLinkFor(raw);
+    } on ArgumentError {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not create a valid invitation link. Try again.'),
+        ),
+      );
+      return;
+    } on FormatException {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not create a valid invitation link. Try again.'),
+        ),
+      );
+      return;
+    }
+    final message = inviteShareMessage(link);
     if (!context.mounted) return;
     await _shareMessage(context, message);
   }
@@ -848,7 +858,8 @@ class _ResumeRefreshState extends ConsumerState<_ResumeRefresh>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      ref.invalidate(communityDisplayProvider);
+      // Refetch friend rows; the local self row is always live.
+      ref.invalidate(remoteFriendsBoardProvider);
     }
   }
 

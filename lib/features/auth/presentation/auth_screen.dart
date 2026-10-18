@@ -159,7 +159,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     final pending = await InviteLinks.takePending();
     if (!mounted) return;
     if (pending != null && pending.isNotEmpty) {
-      context.go('/invite/$pending');
+      context.go('/invite/${Uri.encodeComponent(pending)}');
     } else {
       context.go('/home');
     }

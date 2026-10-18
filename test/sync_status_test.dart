@@ -1,8 +1,33 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:studyup/features/progress/data/study_session.dart';
 import 'package:studyup/features/social/data/social_providers.dart';
+import 'package:studyup/features/social/data/session_sync.dart';
+import 'package:studyup/features/social/data/social_remote.dart';
+
+class _SyncRemote extends SocialRemote {
+  _SyncRemote(this.accountId)
+    : super(
+        SupabaseClient(
+          'https://example.supabase.co',
+          'test-anon-key',
+          authOptions: const AuthClientOptions(autoRefreshToken: false),
+        ),
+      );
+
+  final String accountId;
+  final List<String> uploadedIds = [];
+
+  @override
+  String get userId => accountId;
+
+  @override
+  Future<void> upsertSession(StudySession session) async {
+    uploadedIds.add(session.id);
+  }
+}
 
 StudySession _ended(String id, DateTime start, DateTime end) => StudySession(
   id: id,
@@ -41,6 +66,28 @@ void main() {
       final failed = base.copyWith(lastError: 'boom');
       expect(failed.lastError, 'boom');
       expect(failed.syncing, isFalse);
+    });
+
+    test('sync tracking is isolated between authenticated accounts', () async {
+      final session = _ended(
+        'shared-local-session',
+        DateTime(2026, 10, 12, 9),
+        DateTime(2026, 10, 12, 10),
+      );
+      final firstAccount = _SyncRemote('account-a');
+      final secondAccount = _SyncRemote('account-b');
+
+      expect(await SessionSyncService(firstAccount).syncAll([session]), 1);
+      expect(await SessionSyncService(firstAccount).syncAll([session]), 0);
+      expect(await SessionSyncService(secondAccount).syncAll([session]), 1);
+      expect(firstAccount.uploadedIds, ['shared-local-session']);
+      expect(secondAccount.uploadedIds, ['shared-local-session']);
+      expect(await SessionSyncService(firstAccount).syncedIds(), {
+        'shared-local-session',
+      });
+      expect(await SessionSyncService(secondAccount).syncedIds(), {
+        'shared-local-session',
+      });
     });
 
     test('split rows never exceed the session total (server cap rule)', () {

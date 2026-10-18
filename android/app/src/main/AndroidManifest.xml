@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Release builds need network access for Supabase and the feedback API. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Runtime notification permission (Android 13+); requested in-app
          after the user enters the app, never before onboarding. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -42,18 +44,21 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
             <!-- StudyUp invitation App Links: https://<host>/i/<token>.
-                 Primary host: studyup-feedback-api.vercel.app — the same
-                 Vercel project as /api/feedback; it publishes
+                 Primary host: studyup-4x7z-medurinishanth78-6030s-projects.vercel.app
+                 (the stable Vercel project domain — never a per-deployment
+                 URL) — the same Vercel project as /api/feedback; it publishes
                  /.well-known/assetlinks.json from public/ (see
                  supabase/assetlinks/assetlinks.json). Keep any previously
-                 shared links working: the legacy host invite.studyup.app
-                 stays listed, and autoVerify verifies each host
-                 independently (an unverified host falls back to the
+                 shared links working: the earlier host
+                 studyup-feedback-api.vercel.app and the legacy host
+                 invite.studyup.app stay listed, and autoVerify verifies each
+                 host independently (an unverified host falls back to the
                  browser). Invite-link generation follows INVITE_HOST. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="studyup-4x7z-medurinishanth78-6030s-projects.vercel.app" android:pathPrefix="/i/"/>
                 <data android:scheme="https" android:host="studyup-feedback-api.vercel.app" android:pathPrefix="/i/"/>
                 <data android:scheme="https" android:host="invite.studyup.app" android:pathPrefix="/i/"/>
             </intent-filter>

@@ -66,6 +66,44 @@ int activeDaysInRange(
   return days;
 }
 
+/// One self row built from the live local session list — the exact same
+/// deduped-seconds, streak, and XP-ledger level math the Progress screen's
+/// weekly card and level card use. Both the offline board and the live
+/// (signed-in) board build self through this helper, so Community can
+/// never disagree with Progress, and self needs no server round-trip.
+LeaderboardEntry liveSelfLeaderboardEntry({
+  required StudyProgressState progress,
+  required String memberId,
+  required String displayName,
+  required String avatarId,
+  required int blobVariant,
+  required DateTime weekStart,
+  required DateTime now,
+}) {
+  final streak = computeStudyStreak(
+    minutesForDay: (day) => progress.minutesForDate(day, now: now),
+    today: now,
+    earliestDay: earliestStudyDay(progress.sessions, now),
+  );
+  return LeaderboardEntry(
+    memberId: memberId,
+    displayName: displayName,
+    avatarId: avatarId,
+    blobVariant: blobVariant,
+    isSelf: true,
+    weekSeconds: studiedSecondsInRange(
+      progress.sessions,
+      weekStart,
+      weekStart.add(const Duration(days: 7)),
+      now,
+    ),
+    hasData: true,
+    rank: 0,
+    streakDays: streak.current,
+    level: computeStudyLevel(progress.xp.totalXp).level,
+  );
+}
+
 final communityStoreProvider = Provider<CommunityStore>(
   (_) => CommunityStore(),
 );
@@ -463,26 +501,11 @@ final leaderboardProvider = Provider.family<List<LeaderboardEntry>, DateTime>((
   final self = ref.watch(communitySelfProvider);
   final now = DateTime.now();
   if (community == null) return const [];
-  final bounds = (
-    start: weekStart,
-    end: weekStart.add(const Duration(days: 7)),
-  );
   final prevStart = weekStart.subtract(const Duration(days: 7));
   final selectedKey = weekKeyFor(weekStart);
 
   int selfSeconds(DateTime s, DateTime e) =>
       studiedSecondsInRange(progress.sessions, s, e, now);
-
-  // Self streak + level use the exact Progress-screen math: a day counts
-  // when real minutes were recorded; 1 minute = 1 XP.
-  final selfStreak = computeStudyStreak(
-    minutesForDay: (day) => progress.minutesForDate(day, now: now),
-    today: now,
-    earliestDay: earliestStudyDay(progress.sessions, now),
-  );
-  final selfLevel = computeStudyLevel(
-    totalStudyMinutes(progress.sessions, now),
-  );
 
   // Previous-week ranks for movement (only where data exists).
   final prevSeconds = <String, int>{};
@@ -515,19 +538,16 @@ final leaderboardProvider = Provider.family<List<LeaderboardEntry>, DateTime>((
 
   final unordered = <LeaderboardEntry>[];
   if (community.privacy.leaderboardOptIn) {
-    final seconds = selfSeconds(bounds.start, bounds.end);
+    // Same helper as the live board: live sessions + XP-ledger level.
     unordered.add(
-      LeaderboardEntry(
+      liveSelfLeaderboardEntry(
+        progress: progress,
         memberId: self.id,
         displayName: self.name,
         avatarId: self.avatarId,
         blobVariant: self.blob,
-        isSelf: true,
-        weekSeconds: seconds,
-        hasData: true,
-        rank: 0,
-        streakDays: selfStreak.current,
-        level: selfLevel.level,
+        weekStart: weekStart,
+        now: now,
       ),
     );
   }

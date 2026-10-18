@@ -7,51 +7,65 @@ import 'package:studyup/features/profile/presentation/profile_detail_pages.dart'
 
 void main() {
   group('help guide content', () {
-    test('every article belongs to a known category', () {
-      final ids = helpCategories.map((c) => c.id).toSet();
-      for (final a in helpArticles) {
-        expect(ids, contains(a.categoryId), reason: a.id);
-        expect(a.title.trim(), isNotEmpty);
-        expect(a.body, isNotEmpty);
+    test('exactly the four essential topics, in order', () {
+      expect(helpTopics.map((t) => t.id).toList(), [
+        'home',
+        'subjects',
+        'focus',
+        'progress',
+      ]);
+      expect(helpTopics.map((t) => t.title).toList(), [
+        'Home',
+        'Subjects',
+        'Focus & sessions',
+        'Progress',
+      ]);
+    });
+
+    test('every topic is short and self-contained', () {
+      for (final topic in helpTopics) {
+        expect(topic.title.trim(), isNotEmpty, reason: topic.id);
+        expect(topic.lines, isNotEmpty, reason: topic.id);
+        for (final line in topic.lines) {
+          expect(line.trim(), isNotEmpty, reason: topic.id);
+          expect(
+            line.length,
+            lessThan(140),
+            reason: 'keep help lines scannable: ${topic.id}',
+          );
+        }
       }
     });
 
-    test('covers all required areas', () {
-      final titles = helpArticles.map((a) => a.title).join(' | ');
-      for (final needle in [
+    test('no removed or advanced topics are mentioned', () {
+      final all = helpTopics.map((t) => t.title).join(' | ');
+      for (final gone in [
         'Getting started',
-        'Tasks',
-        'Subjects',
-        'Chapters',
-        'Sources',
-        'Focus sessions',
-        'Daily goal',
-        'Streaks',
+        'Troubleshooting',
         'Community',
         'Notifications',
-        'Privacy',
-        'Feedback',
+        'Chapters:',
       ]) {
-        expect(titles, contains(needle), reason: 'missing: $needle');
+        expect(all, isNot(contains(gone)), reason: 'should be removed: $gone');
       }
     });
 
-    test('search is case-insensitive and empty query returns all', () {
-      expect(searchHelpArticles(''), hasLength(helpArticles.length));
-      expect(
-        searchHelpArticles('REMINDER').map((a) => a.id),
-        contains('tasks'),
-      );
-      expect(searchHelpArticles('midnight').map((a) => a.id), contains('focus-sessions'));
-      expect(searchHelpArticles('zzz-no-such-topic'), isEmpty);
-    });
-
-    test('documents missing goal editor honestly', () {
-      final goal = helpArticles.firstWhere((a) => a.id == 'daily-goal');
-      expect(
-        goal.body.join(' '),
-        contains('no in-app editor'),
-      );
+    test('no technical service names appear in user copy', () {
+      final copy = helpTopics.expand((t) => t.lines).join(' ').toLowerCase();
+      for (final term in [
+        'supabase',
+        'backend',
+        'api',
+        'database',
+        'vercel',
+        'edge function',
+      ]) {
+        expect(
+          copy,
+          isNot(contains(term)),
+          reason: 'user-facing help must stay non-technical: $term',
+        );
+      }
     });
   });
 
@@ -65,67 +79,51 @@ void main() {
         ],
       );
       addTearDown(router.dispose);
-      await tester.pumpWidget(
-        MaterialApp.router(
-          routerConfig: router,
-        ),
-      );
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
       await tester.pumpAndSettle();
     }
 
-    testWidgets('shows search, categories and articles, no shortcuts', (
+    testWidgets('shows the four compact topics collapsed', (tester) async {
+      await pumpHelp(tester);
+      for (final title in ['Home', 'Subjects', 'Focus & sessions', 'Progress']) {
+        expect(find.text(title), findsOneWidget);
+      }
+      // No search box and no article list remain.
+      expect(find.byType(TextField), findsNothing);
+      expect(find.byIcon(Icons.expand_more), findsNWidgets(4));
+      // Bullet lines stay hidden until a topic is opened.
+      expect(find.textContaining('reminder fires'), findsNothing);
+    });
+
+    testWidgets('tapping a topic expands it, tapping again collapses', (
       tester,
     ) async {
       await pumpHelp(tester);
-      expect(find.byType(TextField), findsOneWidget);
-      expect(find.text('Getting started'), findsWidgets);
-      // Default category shows its articles.
-      expect(find.text('Troubleshooting & empty states'), findsOneWidget);
-      // Removed shortcuts must be gone.
-      expect(find.text('Open Home'), findsNothing);
-      expect(find.text('Open Progress'), findsNothing);
-      expect(find.text('Open Profile'), findsNothing);
+      await tester.tap(find.text('Home'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('reminder fires'), findsOneWidget);
+      expect(find.byIcon(Icons.expand_less), findsOneWidget);
+
+      await tester.tap(find.text('Home'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('reminder fires'), findsNothing);
     });
 
-    testWidgets('search filters articles and empty state shows', (
+    testWidgets('opening another topic closes the previous one', (
       tester,
     ) async {
       await pumpHelp(tester);
-      await tester.enterText(find.byType(TextField), 'reminder');
+      await tester.tap(find.text('Home'));
       await tester.pumpAndSettle();
-      expect(find.text('Tasks: create, edit & reminders'), findsOneWidget);
-      expect(find.text('Focus sessions'), findsNothing);
+      expect(find.textContaining('reminder fires'), findsOneWidget);
 
-      await tester.enterText(find.byType(TextField), 'zzz-no-such-topic');
+      await tester.ensureVisible(find.text('Progress'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('No guide articles match'), findsOneWidget);
-    });
-
-    testWidgets('category chips switch the article list', (tester) async {
-      await pumpHelp(tester);
-      expect(find.text('Focus sessions'), findsNothing);
-      await tester.ensureVisible(find.text('Focus & sessions'));
+      await tester.tap(find.text('Progress'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Focus & sessions'));
-      await tester.pumpAndSettle();
-      expect(find.text('Focus sessions'), findsOneWidget);
-    });
-
-    testWidgets('article opens and back returns to the guide', (
-      tester,
-    ) async {
-      await pumpHelp(tester);
-      await tester.ensureVisible(find.text('Focus & sessions'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Focus & sessions'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Focus sessions'));
-      await tester.pumpAndSettle();
-      // Article page shows full paragraphs.
-      expect(find.textContaining('banks the studied time'), findsOneWidget);
-      await tester.tap(find.byIcon(Icons.arrow_back_rounded));
-      await tester.pumpAndSettle();
-      expect(find.text('Focus sessions'), findsOneWidget);
+      expect(find.textContaining('reminder fires'), findsNothing);
+      expect(find.textContaining('day-parts pie'), findsOneWidget);
+      expect(find.byIcon(Icons.expand_less), findsOneWidget);
     });
   });
 }

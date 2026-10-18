@@ -1,3 +1,6 @@
+import 'package:flutter/material.dart';
+
+import 'study_day.dart' show isGoalReached;
 import 'study_session.dart';
 import '../../home/data/home_models.dart';
 
@@ -106,39 +109,234 @@ StudyStreak computeStudyStreak({
   return StudyStreak(current: current, best: best);
 }
 
-/// Total recorded study minutes across all stored sessions (the XP
-/// source). Active sessions accrue live through [now]; ended sessions
-/// contribute their banked duration.
-int totalStudyMinutes(List<StudySession> sessions, DateTime now) {
-  var seconds = 0;
-  for (final s in sessions) {
-    seconds += s.durationAt(s.checkOutTime ?? now).inSeconds;
-  }
-  return seconds ~/ 60;
+/// XP rules (replacing the old "1 study minute = 1 XP" rule):
+/// - 10 XP for every calendar day whose recorded study minutes meet the
+///   daily goal ([isGoalReached]).
+/// - 50 XP bonus for every Mon–Sun week whose total minutes meet the full
+///   weekly goal — 7 × the daily goal, the app's existing "a full week's
+///   goal" definition (see monthlyWeekPercentages in analytics_models).
+/// A missed day or week awards nothing, but XP already earned is never
+/// removed: [XpLedger] awards are append-only and survive goal changes.
+/// Maximum possible XP per week is 120 (7 × 10 daily + 50 weekly bonus).
+const int xpPerGoalDay = 10;
+const int xpWeeklyBonus = 50;
+
+String _two(int value) => value.toString().padLeft(2, '0');
+
+/// `yyyy-MM-dd` key for one local calendar day.
+String xpDayKey(DateTime date) =>
+    '${date.year}-${_two(date.month)}-${_two(date.day)}';
+
+/// Monday midnight of [date]'s Mon–Sun week (the app's week convention).
+DateTime xpWeekStart(DateTime date) =>
+    DateTime(date.year, date.month, date.day).subtract(
+      Duration(days: date.weekday - 1),
+    );
+
+/// Persistent, append-only record of XP awards. Days and weeks are keyed
+/// by local calendar-date strings; set membership makes every evaluation
+/// idempotent, so app restarts, screen opens and repeated saves can never
+/// award the same day or week twice.
+@immutable
+class XpLedger {
+  final Set<String> awardedDays;
+  final Set<String> awardedWeeks;
+  const XpLedger({this.awardedDays = const {}, this.awardedWeeks = const {}});
+
+  int get totalXp =>
+      awardedDays.length * xpPerGoalDay + awardedWeeks.length * xpWeeklyBonus;
+
+  Map<String, Object?> toJson() => {
+    'days': awardedDays.toList()..sort(),
+    'weeks': awardedWeeks.toList()..sort(),
+  };
+
+  factory XpLedger.fromJson(Map<String, Object?> json) => XpLedger(
+    awardedDays: {
+      for (final key in json['days'] as List<Object?>? ?? const [])
+        key! as String,
+    },
+    awardedWeeks: {
+      for (final key in json['weeks'] as List<Object?>? ?? const [])
+        key! as String,
+    },
+  );
 }
 
-/// Level rule (explained in the UI): 1 study minute = 1 XP.
-/// Level N unlocks at 60*N*(N-1)/2 cumulative XP
-/// (L1 0, L2 60, L3 180, L4 360, L5 600, …).
+/// Minutes for one Monday-start week, used for the weekly bonus check.
+typedef MinutesForWeek = int Function(DateTime monday);
+
+/// Evaluates real recorded minutes against the current goal and returns
+/// [ledger] extended with every newly qualified day/week award. Returns
+/// the same instance when nothing changed (callers can skip persisting).
+/// [full] rescans the whole history from [earliestDay] — used on app load
+/// and goal changes; a partial check only re-evaluates today and the
+/// current week, which is enough because recorded minutes only ever grow
+/// while the week is current.
+XpLedger syncXpAwards({
+  required XpLedger ledger,
+  required int dailyGoalMinutes,
+  required DateTime now,
+  required MinutesForDay minutesForDay,
+  required MinutesForWeek minutesForWeek,
+  required DateTime earliestDay,
+  bool full = false,
+}) {
+  if (dailyGoalMinutes <= 0) return ledger;
+  final weekGoalMinutes = dailyGoalMinutes * 7;
+  var days = ledger.awardedDays;
+  var weeks = ledger.awardedWeeks;
+  var changed = false;
+
+  bool awardDay(DateTime day) {
+    final key = xpDayKey(day);
+    if (days.contains(key)) return false;
+    if (!isGoalReached(minutesForDay(day), dailyGoalMinutes)) return false;
+    days = {...days, key};
+    return true;
+  }
+
+  bool awardWeek(DateTime monday) {
+    final key = xpDayKey(monday);
+    if (weeks.contains(key)) return false;
+    if (!isGoalReached(minutesForWeek(monday), weekGoalMinutes)) return false;
+    weeks = {...weeks, key};
+    return true;
+  }
+
+  final today = DateTime(now.year, now.month, now.day);
+  if (full) {
+    var day = DateTime(earliestDay.year, earliestDay.month, earliestDay.day);
+    while (!day.isAfter(today)) {
+      changed = awardDay(day) || changed;
+      day = day.add(const Duration(days: 1));
+    }
+    var monday = xpWeekStart(earliestDay);
+    final currentMonday = xpWeekStart(today);
+    while (!monday.isAfter(currentMonday)) {
+      changed = awardWeek(monday) || changed;
+      monday = monday.add(const Duration(days: 7));
+    }
+  } else {
+    changed = awardDay(today) || changed;
+    changed = awardWeek(xpWeekStart(today)) || changed;
+  }
+  if (!changed) return ledger;
+  return XpLedger(awardedDays: days, awardedWeeks: weeks);
+}
+
+/// Level progression tier: [xpPerLevel] is the cost of clearing each level
+/// inside the tier; cumulative thresholds are built from all tiers below.
+class StudyTier {
+  final String name;
+  final String theme;
+
+  /// Belt/diamond theme color for the level icon.
+  final Color color;
+  final int minLevel;
+
+  /// Highest level in the tier; null = unbounded (Grandmaster).
+  final int? maxLevel;
+  final int xpPerLevel;
+  const StudyTier({
+    required this.name,
+    required this.theme,
+    required this.color,
+    required this.minLevel,
+    this.maxLevel,
+    required this.xpPerLevel,
+  });
+}
+
+/// The five tiers with their themes and per-level XP cost.
+const List<StudyTier> studyTiers = [
+  StudyTier(
+    name: 'Novice',
+    theme: 'Seedling',
+    color: Color(0xFFF5F5F7),
+    minLevel: 1,
+    maxLevel: 5,
+    xpPerLevel: 100,
+  ),
+  StudyTier(
+    name: 'Apprentice',
+    theme: 'Sprout',
+    color: Color(0xFFCD7F32),
+    minLevel: 6,
+    maxLevel: 15,
+    xpPerLevel: 250,
+  ),
+  StudyTier(
+    name: 'Achiever',
+    theme: 'Tree',
+    color: Color(0xFFC9CBD8),
+    minLevel: 16,
+    maxLevel: 30,
+    xpPerLevel: 500,
+  ),
+  StudyTier(
+    name: 'Master',
+    theme: 'Focus Elite',
+    color: Color(0xFFFDD679),
+    minLevel: 31,
+    maxLevel: 50,
+    xpPerLevel: 1000,
+  ),
+  StudyTier(
+    name: 'Grandmaster',
+    theme: 'Sage',
+    color: Color(0xFF8FE3FF),
+    minLevel: 51,
+    xpPerLevel: 2500,
+  ),
+];
+
+StudyTier studyTierForLevel(int level) {
+  for (final tier in studyTiers.reversed) {
+    if (level >= tier.minLevel) return tier;
+  }
+  return studyTiers.first;
+}
+
+/// Cumulative XP threshold to be at [level]: the sum of every cleared
+/// level's tier cost (Novice 1–5 at 100 each, Apprentice 6–15 at 250,
+/// Achiever 16–30 at 500, Master 31–50 at 1,000, Grandmaster 51+ at
+/// 2,500). L1 = 0, L2 = 100, L6 = 500, L16 = 3,000, L31 = 10,500,
+/// L51 = 30,500 — earlier tiers are never re-priced by later ones.
 int xpThresholdForLevel(int level) {
   if (level <= 1) return 0;
-  return 60 * level * (level - 1) ~/ 2;
+  var remaining = level - 1;
+  var total = 0;
+  for (final tier in studyTiers) {
+    if (remaining <= 0) break;
+    final span = tier.maxLevel == null
+        ? remaining
+        : tier.maxLevel! + 1 - tier.minLevel;
+    final cleared = remaining < span ? remaining : span;
+    total += cleared * tier.xpPerLevel;
+    remaining -= cleared;
+  }
+  return total;
 }
 
+/// Current level plus everything the UI needs for one total XP value.
 class StudyLevel {
   final int level;
   final int totalXp;
   final int xpIntoLevel;
   final int xpForNextLevel;
+
+  /// XP still needed to reach the next level.
+  final int xpRemaining;
+  final StudyTier tier;
   const StudyLevel({
     required this.level,
     required this.totalXp,
     required this.xpIntoLevel,
     required this.xpForNextLevel,
+    required this.xpRemaining,
+    required this.tier,
   });
-
-  double get progress =>
-      xpForNextLevel <= 0 ? 1 : (xpIntoLevel / xpForNextLevel).clamp(0.0, 1.0);
 }
 
 StudyLevel computeStudyLevel(int totalXp) {
@@ -154,6 +352,8 @@ StudyLevel computeStudyLevel(int totalXp) {
     totalXp: xp,
     xpIntoLevel: xp - base,
     xpForNextLevel: next - base,
+    xpRemaining: next - xp,
+    tier: studyTierForLevel(level),
   );
 }
 

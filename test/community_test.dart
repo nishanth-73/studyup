@@ -454,10 +454,10 @@ void main() {
     });
 
     test('level math matches the Progress screen formula', () {
-      // 60 XP = level 2, 180 XP = level 3 (1 min = 1 XP).
-      expect(computeStudyLevel(59).level, 1);
-      expect(computeStudyLevel(60).level, 2);
-      expect(computeStudyLevel(180).level, 3);
+      // Tier thresholds: 100 XP = level 2, 500 XP = level 6 (Apprentice).
+      expect(computeStudyLevel(99).level, 1);
+      expect(computeStudyLevel(100).level, 2);
+      expect(computeStudyLevel(500).level, 6);
     });
   });
 }

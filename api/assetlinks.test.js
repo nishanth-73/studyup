@@ -1,7 +1,7 @@
 // Guards the hosted App Links association file.
 //
 // public/.well-known/assetlinks.json is what Vercel serves at
-// https://studyup-feedback-api.vercel.app/.well-known/assetlinks.json
+// https://studyup-4x7z-medurinishanth78-6030s-projects.vercel.app/.well-known/assetlinks.json
 // (public/ is the default static output directory for non-framework
 // Vercel projects). supabase/assetlinks/assetlinks.json is the
 // documentation copy; both must stay identical.

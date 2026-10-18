@@ -65,7 +65,7 @@ final remoteRealtimeProvider = Provider<void>((ref) {
     });
     friendsSub = remote.subscribeFriendships(() {
       ref.invalidate(remoteFriendsProvider);
-      ref.invalidate(communityDisplayProvider);
+      ref.invalidate(remoteFriendsBoardProvider);
     });
   } catch (_) {
     // Realtime unavailable (offline/blocked) — refresh fallbacks apply.
@@ -81,15 +81,23 @@ final remoteRealtimeProvider = Provider<void>((ref) {
 
 /// Display ranking for the Community screen.
 ///
-/// LIVE (signed in): the accepted-friends board from [leaderboard_scope]
-/// for the selected week — real session-backed data, never mixed with
-/// demo fixtures or code snapshots. Ranks + movement are computed once
-/// here so podium, comparison, and the full list always agree.
+/// LIVE (signed in): friend rows come from [remoteFriendsBoardProvider]
+/// (the friends scope of [leaderboard_scope] — real session-backed data,
+/// never mixed with demo fixtures or code snapshots). SELF is always
+/// computed locally from the live session list through
+/// [liveSelfLeaderboardEntry] — the same single source of truth as the
+/// Progress weekly card — so session start/pause/resume/end appear
+/// immediately and the board never waits for an upload. Ranks + movement
+/// are computed once here so podium, comparison, and the full list always
+/// agree.
 ///
 /// OFFLINE: the existing local path (self sessions + accepted-snapshot
 /// friends + clearly-flagged demo fixtures).
+///
+/// autoDispose: leaving and returning to Community refetches fresh server
+/// numbers instead of showing a stale cached board.
 final communityDisplayProvider =
-    FutureProvider.family<List<LeaderboardEntry>, DateTime>((
+    FutureProvider.autoDispose.family<List<LeaderboardEntry>, DateTime>((
       ref,
       weekStart,
     ) async {
@@ -98,6 +106,50 @@ final communityDisplayProvider =
       }
       return _localBoard(ref, weekStart);
     });
+
+/// Friends-only server rows for [weekStart] plus the week before, straight
+/// from the friends scope of [leaderboard_scope] (aggregates only). SELF
+/// IS NEVER RANKED FROM THIS FETCH: self is local and live, so this layer
+/// can stay cached while sessions tick and only refetches on explicit
+/// invalidation (friendship changes, sync completions, resume) or on the
+/// next Community visit (autoDispose).
+final remoteFriendsBoardProvider =
+    FutureProvider.autoDispose.family<
+      ({List<LeaderboardEntry> current, List<LeaderboardEntry> previous}),
+      DateTime
+    >((ref, weekStart) async {
+      final remote = ref.watch(socialRemoteProvider)!;
+      final selfId = ref.watch(backendUserIdProvider)!;
+      final rows = await remote.leaderboard(weekStart: weekStart);
+      final prev = await remote.leaderboard(
+        weekStart: weekStart.subtract(const Duration(days: 7)),
+      );
+      return (
+        current: [
+          for (final r in rows)
+            if (r.userId != selfId) _friendEntry(r),
+        ],
+        previous: [
+          for (final r in prev)
+            if (r.userId != selfId && r.weekSeconds > 0) _friendEntry(r),
+        ],
+      );
+    });
+
+LeaderboardEntry _friendEntry(RemoteBoardRow r) => LeaderboardEntry(
+  memberId: r.userId,
+  displayName: r.displayName,
+  avatarId: r.avatarId,
+  blobVariant: r.blobVariant,
+  isSelf: false,
+  weekSeconds: r.weekSeconds,
+  // The server lists every accepted friend, even at zero; zero rows are
+  // listed but unranked so "no data this week" is never shown as effort.
+  hasData: r.weekSeconds > 0,
+  rank: 0,
+  streakDays: r.streakDays,
+  level: computeStudyLevel(r.totalSeconds ~/ 60).level,
+);
 
 LeaderboardEntry _unranked(LeaderboardEntry e) => LeaderboardEntry(
   memberId: e.memberId,
@@ -112,50 +164,38 @@ LeaderboardEntry _unranked(LeaderboardEntry e) => LeaderboardEntry(
   level: e.level,
 );
 
-Future<List<LeaderboardEntry>> _remoteBoard(Ref ref, DateTime weekStart) async {
-  final remote = ref.watch(socialRemoteProvider)!;
+Future<List<LeaderboardEntry>> _remoteBoard(
+  Ref ref,
+  DateTime weekStart,
+) async {
+  final base = await ref.watch(remoteFriendsBoardProvider(weekStart).future);
   final selfId = ref.watch(backendUserIdProvider)!;
+  final self = ref.watch(communitySelfProvider);
+  final progress = ref.watch(studyProgressProvider);
+  final now = DateTime.now();
+  // Live local self — recomputed on every session event and tick, so the
+  // board tracks the Progress weekly card exactly, upload or not.
+  LeaderboardEntry selfFor(DateTime start) => liveSelfLeaderboardEntry(
+    progress: progress,
+    memberId: selfId,
+    displayName: self.name,
+    avatarId: self.avatarId,
+    blobVariant: self.blob,
+    weekStart: start,
+    now: now,
+  );
   final prevStart = weekStart.subtract(const Duration(days: 7));
-  final rows = await remote.leaderboard(weekStart: weekStart);
-  final prev = await remote.leaderboard(weekStart: prevStart);
-  final current = [
-    for (final r in rows)
-      LeaderboardEntry(
-        memberId: r.userId,
-        displayName: r.displayName,
-        avatarId: r.avatarId,
-        blobVariant: r.blobVariant,
-        isSelf: r.userId == selfId,
-        weekSeconds: r.weekSeconds,
-        // The server lists self and every accepted friend, even at zero,
-        // so the list is complete; the UI labels zero rows honestly.
-        hasData: r.weekSeconds > 0 || r.userId == selfId,
-        rank: 0,
-        streakDays: r.streakDays,
-        level: computeStudyLevel(r.totalSeconds ~/ 60).level,
-      ),
-  ];
   final prevRanked = Leaderboard.rank(
-    unordered: [
-      for (final r in prev)
-        if (r.weekSeconds > 0 || r.userId == selfId)
-          LeaderboardEntry(
-            memberId: r.userId,
-            displayName: r.displayName,
-            avatarId: r.avatarId,
-            blobVariant: r.blobVariant,
-            isSelf: r.userId == selfId,
-            weekSeconds: r.weekSeconds,
-            hasData: true,
-            rank: 0,
-          ),
-    ],
+    unordered: [...base.previous, selfFor(prevStart)],
     previousRanks: const {},
   );
   final prevRanks = {
     for (final e in prevRanked.where((e) => e.hasData)) e.memberId: e.rank,
   };
-  return Leaderboard.rank(unordered: current, previousRanks: prevRanks);
+  return Leaderboard.rank(
+    unordered: [selfFor(weekStart), ...base.current],
+    previousRanks: prevRanks,
+  );
 }
 
 Future<List<LeaderboardEntry>> _localBoard(Ref ref, DateTime weekStart) async {
@@ -245,10 +285,11 @@ Future<void> _syncQuietly(
     await service.syncAll(sessions);
     final after = (await service.syncedIds()).length;
     if (after > before) {
-      // New progress reached the server: refresh the friends board so the
-      // uploader sees updated numbers without a manual pull. Peers refresh
-      // via realtime; this covers the syncing device itself.
-      ref.invalidate(communityDisplayProvider);
+      // New progress reached the server: refetch the friends board so the
+      // uploader sees freshly shared friend numbers without a manual pull
+      // (self is always live locally). Peers refresh via realtime; this
+      // covers the syncing device itself.
+      ref.invalidate(remoteFriendsBoardProvider);
     }
     notifier.state = SyncStatus(
       pending: pending - (after - before) < 0 ? 0 : pending - (after - before),
@@ -273,7 +314,7 @@ Future<String> syncAfterSignIn(WidgetRef ref) async {
   try {
     final sessions = ref.read(studyProgressProvider).sessions;
     final count = await SessionSyncService(remote).syncAll(sessions);
-    if (count > 0) ref.invalidate(communityDisplayProvider);
+    if (count > 0) ref.invalidate(remoteFriendsBoardProvider);
     return 'Synced $count session${count == 1 ? '' : 's'}.';
   } catch (_) {
     return 'Sync failed — will retry automatically.';

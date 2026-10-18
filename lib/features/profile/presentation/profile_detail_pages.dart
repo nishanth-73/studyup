@@ -113,14 +113,17 @@ class DetailCard extends StatelessWidget {
 }
 
 /// Tappable settings row (icon + title + subtitle + chevron).
+/// [iconColor] lets destructive actions stand out from ordinary rows.
 class DetailRow extends StatelessWidget {
   final IconData icon;
+  final Color iconColor;
   final String title;
   final String? subtitle;
   final VoidCallback onTap;
   const DetailRow({
     super.key,
     required this.icon,
+    this.iconColor = Colors.white,
     required this.title,
     this.subtitle,
     required this.onTap,
@@ -141,7 +144,7 @@ class DetailRow extends StatelessWidget {
           },
           child: Row(
             children: [
-              Icon(icon, color: Colors.white, size: 20),
+              Icon(icon, color: iconColor, size: 20),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -339,9 +342,10 @@ class NotificationsPage extends ConsumerWidget {
 
 // ---------------- PRIVACY & DATA ----------------
 
-/// Privacy & Data page: what is stored locally vs on Supabase, plus the
-/// real actions this app supports (sign-out / exit demo, erase all local
-/// data). Every destructive action confirms first and reports honestly.
+/// Privacy & Data page: a short, honest summary of what the app stores
+/// on this device vs online, plus the real actions it supports
+/// (sign-out / exit demo, erase local data). Destructive actions confirm
+/// first and only claim success after the operation succeeds.
 class PrivacyDataPage extends ConsumerStatefulWidget {
   const PrivacyDataPage({super.key});
 
@@ -400,18 +404,11 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
     final ok = await _confirm(
       signedIn ? 'Sign out?' : 'End demo access?',
       signedIn
-          ? 'This signs you out on this device only. Everything stored on '
-              'this phone stays saved here, and your Supabase account (with '
-              'anything already synced to it) is untouched. Sign in again '
-              'anytime to reconnect.'
-          : backendLive
-          ? 'Demo access on this device will be removed. Everything stored '
-              'on this phone stays saved here. Sign in with an account, or '
-              'start a new demo, anytime.'
-          : 'Demo access on this device will be removed. Everything stored '
-              'on this phone stays saved here. Nothing was ever uploaded, '
-              'so there is nothing to delete anywhere else.',
-      signedIn ? 'Sign out' : 'End demo',
+          ? 'Sign out of your account on this device? You may need to sign '
+                'in again to access your account.'
+          : 'End demo access on this device? Your saved study data stays '
+                'on this device.',
+      signedIn ? 'Sign Out' : 'End Demo',
     );
     if (!ok || !mounted) return;
     setState(() => _busy = true);
@@ -425,8 +422,8 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
       }
       await ref.read(userProfileProvider.notifier).demoSignOut();
       if (mounted) context.go('/auth');
-    } catch (error) {
-      _say('Could not sign out: $error');
+    } catch (_) {
+      _say('Could not sign out. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -471,20 +468,12 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
 
   Future<void> _eraseAll() async {
     final ok = await _confirm(
-      'Erase all local data?',
-      'This permanently deletes on this device only: your profile, '
-      'subjects with chapters, topics and attached files (downloaded '
-      'PDFs and images included), tasks, study sessions, daily goal, '
-      'notification settings and history, quiz best scores, community '
-      'friends and invitations, synced-session markers, feedback drafts '
-      'and sent log, and app settings.\n\n'
-      'It does NOT delete your Supabase account or anything already '
-      'synced to it — those stay on the server. It DOES clear the saved '
-      'sign-in on this device, so you will need to sign in again '
-      'afterwards.\n\n'
-      'Temporary image caches managed by Android are left for the system '
-      'to clean. This cannot be undone.',
-      'Erase everything',
+      'Erase local data?',
+      'Delete the data stored on this device? This removes your profile, '
+          'subjects and attached files, tasks, study sessions and '
+          'settings, and clears the saved sign-in. Your online account and '
+          'anything already synced are not deleted. This cannot be undone.',
+      'Erase Data',
     );
     if (!ok || !mounted) return;
     setState(() => _busy = true);
@@ -509,8 +498,8 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
       _say('All local data erased.');
       await Future<void>.delayed(const Duration(milliseconds: 900));
       if (mounted) context.go('/');
-    } catch (error) {
-      _say('Could not erase data: $error');
+    } catch (_) {
+      _say('Could not erase data. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -518,7 +507,6 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
 
   @override
   Widget build(BuildContext context) {
-    final profile = ref.watch(userProfileProvider).valueOrNull;
     final subjects = ref
         .watch(subjectsProvider)
         .where((s) => !s.archived)
@@ -528,6 +516,12 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
     final backendOn = ref.watch(backendLiveProvider);
     final signedIn = ref.watch(backendUserIdProvider) != null;
     final email = ref.watch(backendUserEmailProvider);
+
+    final accountLine = signedIn
+        ? 'Signed in${email != null && email.isNotEmpty ? ' as $email' : ''}.'
+        : backendOn
+        ? 'No account on this device — offline or demo access.'
+        : 'Demo access — no account in this build.';
 
     Widget stat(String label, String value) {
       return Padding(
@@ -541,9 +535,9 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
       );
     }
 
-    Widget docLine(String text) {
+    Widget line(String text) {
       return Padding(
-        padding: const EdgeInsets.only(top: 4),
+        padding: const EdgeInsets.only(top: 5),
         child: Text(text, style: AppTextStyles.caption12),
       );
     }
@@ -555,72 +549,19 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Your account', style: AppTextStyles.body14Bold),
-              const SizedBox(height: 4),
-              if (signedIn)
-                Text(
-                  'Signed in${email != null && email.isNotEmpty ? ' as $email' : ''}. '
-                  'Only you can read and change your synced records; friends '
-                  'see just your display name, avatar style, and leaderboard '
-                  'totals you opted to share.',
-                  style: AppTextStyles.caption12,
-                )
-              else if (backendOn)
-                Text(
-                  'Running offline or in demo mode: everything below stays '
-                  'on this phone and nothing is uploaded until you sign in.',
-                  style: AppTextStyles.caption12,
-                )
-              else
-                Text(
-                  'Demo access, no account here: everything below stays on '
-                  'this phone and nothing is ever uploaded.',
-                  style: AppTextStyles.caption12,
-                ),
-            ],
-          ),
-        ),
-        DetailCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Your stored data', style: AppTextStyles.body14Bold),
-              stat('Profile', profile == null ? 'not set up' : 'set up'),
+              Text('Your Data', style: AppTextStyles.body14Bold),
+              const SizedBox(height: 5),
+              Text(accountLine, style: AppTextStyles.caption12),
+              const SizedBox(height: 6),
               stat('Subjects', '$subjects'),
               stat('Tasks', '$tasks'),
               stat('Study sessions', '${progress.sessions.length}'),
               stat('Daily goal', '${progress.dailyStudyGoalMinutes}m'),
-              docLine(
-                'On this device only, kept as plain app data (not '
-                'encrypted): your profile and avatar choice, subjects with '
-                'chapters, topics and attached files (downloaded PDFs and '
-                'images live in the app\u2019s private files folder), tasks '
-                'with schedules, study sessions, the daily goal, '
-                'notification switches and history, quiz best scores, '
-                'community friends and invitations, synced-session markers, '
-                'feedback drafts and sent log, and app settings.',
-              ),
-              docLine(
-                signedIn || backendOn
-                    ? 'On Supabase while signed in: your community profile '
-                        '(display name, avatar style, leaderboard and sharing '
-                        'flags), friend requests and friendships, single-use '
-                        'invitation tokens (hash only), and ended study '
-                        'sessions with per-day totals. Row-level security '
-                        'means only you can read or change your rows; '
-                        'friends see only shared totals.'
-                    : 'Nothing is sent to any server in this mode: there is '
-                        'no account here, and exiting demo only ends demo '
-                        'access on this phone.',
-              ),
-              docLine(
-                'What syncs: ended study sessions upload (each has a stable '
-                'id, so retries never duplicate it) and your community '
-                'profile mirrors the sharing toggles. Everything else stays '
-                'on this device. Signing out clears only the saved sign-in '
-                '— local records stay saved here. Erasing deletes local '
-                'copies (including of synced items) but never your Supabase '
-                'account or server records.',
+              line(
+                'This includes your profile (name and avatar), subjects with '
+                'chapters, topics and attached files, tasks with reminders, '
+                'study sessions, notification settings and quiz best '
+                'scores.',
               ),
             ],
           ),
@@ -629,33 +570,34 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Your rights & choices', style: AppTextStyles.body14Bold),
-              docLine(
-                'Access & portability: your records are visible in the app — '
-                'request a copy of them via Profile → Feedback.',
+              Text(
+                'Data Storage & Services',
+                style: AppTextStyles.body14Bold,
               ),
-              docLine(
-                'Correction: edit or delete subjects, tasks, profile and '
-                'sessions directly in the app.',
+              line(
+                'Everything is kept on this device first, as plain app data '
+                '(not encrypted).',
               ),
-              docLine(
-                'Deletion: “Erase all local data” removes on-device copies '
-                'immediately. To also delete your Supabase account and '
-                'synced records, send a deletion request via Profile → '
-                'Feedback — there is no in-app server-delete button yet.',
+              line(
+                signedIn
+                    ? 'While you are signed in, your profile, friends and '
+                          'finished study sessions sync to an online database '
+                          'so they follow your account. Only you can read or '
+                          'change your synced records; friends see only the '
+                          'totals you choose to share.'
+                    : backendOn
+                    ? 'Nothing is uploaded while you are signed out. Sign in '
+                          'to sync your profile, friends and finished study '
+                          'sessions to your account.'
+                    : 'This build has no account connection, so nothing '
+                          'leaves this device.',
               ),
-              docLine(
-                'Opt-out: no ads and no analytics are built in, and nothing '
-                'is sold. Sharing with friends and the leaderboard is '
-                'opt-in (Friends → Privacy toggles) and can be switched '
-                'off any time.',
+              line(
+                'Attached files (PDFs and images) always stay on this '
+                'device.',
               ),
-              docLine(
-                'Retention: on-device data stays until you erase it, synced '
-                'records stay until you request deletion, and feedback '
-                'emails stay in the support inbox so they can be actioned. '
-                'The app is not directed at children under 13.',
-              ),
+              if (backendOn)
+                line('Sign-in uses email and password, or Google.'),
             ],
           ),
         ),
@@ -667,16 +609,17 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
               ? 'Sign out of demo access'
               : 'Exit demo',
           subtitle: signedIn
-              ? 'Signs out on this device; data stays saved'
-              : 'Keeps study data, ends demo access',
+              ? 'Signs out on this device; your data stays saved'
+              : 'Keeps your data, ends demo access',
           onTap: _busy ? () {} : _signOut,
         ),
         DetailRow(
           icon: Icons.delete_outline,
-          title: 'Erase all local data',
+          iconColor: AppColors.error,
+          title: 'Erase local data',
           subtitle: _busy
               ? 'Working…'
-              : 'Deletes on-device data, keeps your account',
+              : 'Deletes everything stored on this device',
           onTap: _busy ? () {} : _eraseAll,
         ),
       ],
@@ -686,8 +629,8 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
 
 // ---------------- HELP ----------------
 
-/// Help page: searchable, organized guide. Categories + articles come from
-/// [help_guide.dart] and describe only behaviour verified in this codebase.
+/// Help page: four compact, expandable how-to topics from [help_guide.dart]
+/// that describe only behaviour verified in this codebase.
 class HelpPage extends StatefulWidget {
   const HelpPage({super.key});
 
@@ -696,178 +639,100 @@ class HelpPage extends StatefulWidget {
 }
 
 class _HelpPageState extends State<HelpPage> {
-  final _search = TextEditingController();
-  String _query = '';
-  String _categoryId = 'start';
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
+  String? _openId;
 
   @override
   Widget build(BuildContext context) {
-    final results = searchHelpArticles(_query);
-    final visible = _query.trim().isEmpty
-        ? helpArticlesIn(_categoryId)
-        : results;
     return DetailScaffold(
       title: 'Help',
       children: [
         DetailCard(
-          child: TextField(
-            controller: _search,
-            textInputAction: TextInputAction.search,
-            style: AppTextStyles.body14,
-            decoration: InputDecoration(
-              hintText: 'Search the guide…',
-              hintStyle: AppTextStyles.body14.copyWith(
-                color: AppColors.textMuted.withValues(alpha: 0.75),
-              ),
-              prefixIcon: const Icon(
-                Icons.search,
-                color: AppColors.textSecondary,
-              ),
-              suffixIcon: _query.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: 'Clear search',
-                      onPressed: () {
-                        _search.clear();
-                        setState(() => _query = '');
-                      },
-                      icon: const Icon(
-                        Icons.clear,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-              filled: true,
-              fillColor: AppColors.surface2,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
-              ),
-              border: const OutlineInputBorder(
-                borderRadius: BorderRadius.all(Radius.circular(14)),
-                borderSide: BorderSide.none,
-              ),
-            ),
-            onChanged: (v) => setState(() => _query = v),
+          child: Text(
+            'Quick answers for everyday tasks. Tap a topic to expand it.',
+            style: AppTextStyles.caption12,
           ),
         ),
-        if (_query.trim().isEmpty) ...[
-          SizedBox(
-            height: 40,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: helpCategories.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (ctx, i) {
-                final c = helpCategories[i];
-                final selected = c.id == _categoryId;
-                return ChoiceChip(
-                  label: Text(c.title),
-                  selected: selected,
-                  selectedColor: AppColors.cta,
-                  backgroundColor: AppColors.surface,
-                  labelStyle: AppTextStyles.caption13.copyWith(
-                    color: selected
-                        ? AppColors.onCta
-                        : AppColors.textPrimary,
-                  ),
-                  onSelected: (_) {
-                    HapticFeedback.selectionClick();
-                    setState(() => _categoryId = c.id);
-                  },
-                );
-              },
-            ),
+        for (final topic in helpTopics)
+          _HelpTopicCard(
+            topic: topic,
+            expanded: _openId == topic.id,
+            onToggle: () {
+              SystemSound.play(SystemSoundType.click);
+              HapticFeedback.selectionClick();
+              setState(
+                () => _openId = _openId == topic.id ? null : topic.id,
+              );
+            },
           ),
-          const SizedBox(height: 8),
-        ],
-        if (visible.isEmpty)
-          DetailCard(
-            child: Text(
-              'No guide articles match “${_query.trim()}”. Try fewer words, '
-              'or browse the categories.',
-              style: AppTextStyles.caption12,
-            ),
-          )
-        else
-          for (final article in visible)
-            DetailCard(
-              child: Material(
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    SystemSound.play(SystemSoundType.click);
-                    HapticFeedback.selectionClick();
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) =>
-                            HelpArticlePage(article: article),
-                      ),
-                    );
-                  },
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              article.title,
-                              style: AppTextStyles.body14,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              article.body.first,
-                              style: AppTextStyles.caption12,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Icon(
-                        Icons.chevron_right,
-                        color: AppColors.textSecondary,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
       ],
     );
   }
 }
 
-/// Single guide article: title + readable paragraphs, same detail frame.
-class HelpArticlePage extends StatelessWidget {
-  final HelpArticle article;
-  const HelpArticlePage({super.key, required this.article});
+/// One expandable help topic: icon + title row, bullet lines when open.
+class _HelpTopicCard extends StatelessWidget {
+  final HelpTopic topic;
+  final bool expanded;
+  final VoidCallback onToggle;
+  const _HelpTopicCard({
+    required this.topic,
+    required this.expanded,
+    required this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return DetailScaffold(
-      title: article.title,
-      children: [
-        DetailCard(
+    return DetailCard(
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onToggle,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (var i = 0; i < article.body.length; i++) ...[
-                Text(article.body[i], style: AppTextStyles.secondary14),
-                if (i < article.body.length - 1) const SizedBox(height: 10),
+              Row(
+                children: [
+                  Icon(topic.icon, size: 20, color: AppColors.cta),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(topic.title, style: AppTextStyles.body14),
+                  ),
+                  Icon(
+                    expanded ? Icons.expand_less : Icons.expand_more,
+                    color: AppColors.textSecondary,
+                  ),
+                ],
+              ),
+              if (expanded) ...[
+                const SizedBox(height: 10),
+                for (final line in topic.lines)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(top: 7, right: 8),
+                          width: 5,
+                          height: 5,
+                          decoration: const BoxDecoration(
+                            color: AppColors.cta,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(line, style: AppTextStyles.caption12),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ],
           ),
         ),
-      ],
+      ),
     );
   }
 }

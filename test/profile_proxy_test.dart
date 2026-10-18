@@ -122,22 +122,26 @@ void main() {
 
       await tapRow(tester, 'Help');
       expectNoErrors(tester);
-      // Guide: search + categories, no shortcut rows.
-      expect(find.byType(TextField), findsOneWidget);
+      // Compact guide: four expandable topics, no search, no shortcuts.
+      expect(find.byType(TextField), findsNothing);
       expect(find.text('Open Home'), findsNothing);
       expect(find.text('Open Progress'), findsNothing);
       expect(find.text('Open Profile'), findsNothing);
-      // Default category is Getting started; switch to Focus & sessions.
-      await tester.ensureVisible(find.text('Focus & sessions'));
+      for (final topic in [
+        'Home',
+        'Subjects',
+        'Focus & sessions',
+        'Progress',
+      ]) {
+        expect(find.text(topic), findsOneWidget);
+      }
+      // Expanding a topic reveals its short bullet lines.
+      await tester.tap(find.text('Home'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Focus & sessions'));
+      expect(find.textContaining('Schedule Task'), findsOneWidget);
+      await tester.tap(find.text('Home'));
       await tester.pumpAndSettle();
-      expect(find.text('Focus sessions'), findsOneWidget);
-      // Article opens with full content.
-      await tester.tap(find.text('Focus sessions'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('banks the studied time'), findsOneWidget);
-      await goBack(tester); // article -> guide
+      expect(find.textContaining('Schedule Task'), findsNothing);
       await goBack(tester); // guide -> profile
 
       await tapRow(tester, 'Feedback');
@@ -188,25 +192,23 @@ void main() {
       await pumpProfile(tester);
       await tapRow(tester, 'Privacy & data');
       expectNoErrors(tester);
-      expect(find.text('Your stored data'), findsOneWidget);
+      expect(find.text('Your Data'), findsOneWidget);
+      expect(find.text('Data Storage & Services'), findsOneWidget);
       expect(find.textContaining('not encrypted'), findsOneWidget);
-      expect(find.textContaining('What syncs'), findsOneWidget);
-      // No Copy-as-JSON action exists (removed by design).
+      // Technical service names and removed sections stay out of user copy.
+      expect(find.textContaining('Supabase'), findsNothing);
+      expect(find.text('Your rights & choices'), findsNothing);
       expect(find.text('Copy data as JSON'), findsNothing);
-      // Rights/retention/opt-out summary card is present.
-      expect(find.text('Your rights & choices'), findsOneWidget);
-      expect(find.textContaining('Access & portability'), findsOneWidget);
       // Offline test env: demo mode, exit keeps data. The action rows sit
-      // below the fold in the lazy list (the rights card is above them):
-      // scroll them into view before asserting.
+      // below the fold in the lazy list: scroll them into view first.
       await tester.scrollUntilVisible(
-        find.text('Erase all local data'),
+        find.text('Erase local data'),
         300,
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pump();
       expect(find.text('Exit demo'), findsOneWidget);
-      expect(find.text('Erase all local data'), findsOneWidget);
+      expect(find.text('Erase local data'), findsOneWidget);
       // The ListView builds lazily: scrolling this far disposes the header
       // row (and its back arrow), so scroll back up before navigating out.
       await tester.scrollUntilVisible(
@@ -235,17 +237,17 @@ void main() {
       await pumpProfile(tester);
       SharedPreferences.setMockInitialValues({'probe.keep': 'yes'});
       await tapRow(tester, 'Privacy & data');
-      await tapRow(tester, 'Erase all local data');
+      await tapRow(tester, 'Erase local data');
       await tester.pump();
       // Confirmation explains scope and warns it cannot be undone.
-      expect(find.text('Erase all local data?'), findsOneWidget);
+      expect(find.text('Erase local data?'), findsOneWidget);
       expect(find.textContaining('cannot be undone'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
-      expect(find.text('Erase everything'), findsOneWidget);
+      expect(find.text('Erase Data'), findsOneWidget);
 
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      expect(find.text('Erase all local data?'), findsNothing);
+      expect(find.text('Erase local data?'), findsNothing);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('probe.keep'), 'yes');
       expectNoErrors(tester);
@@ -268,9 +270,9 @@ void main() {
       await pumpProfile(tester);
       SharedPreferences.setMockInitialValues({'probe.keep': 'yes'});
       await tapRow(tester, 'Privacy & data');
-      await tapRow(tester, 'Erase all local data');
+      await tapRow(tester, 'Erase local data');
       await tester.pump();
-      await tester.tap(find.text('Erase everything'));
+      await tester.tap(find.text('Erase Data'));
       // The erase touches real async work (file stat, platform channels)
       // which only completes in the real async zone; bounded pumps then
       // rebuild (pumpAndSettle would spin on the restarted 1s ticker).
@@ -386,6 +388,31 @@ void main() {
       expect(find.text('Level 1'), findsNothing);
       expect(find.text('Streak & Level'), findsNothing);
       expect(find.text("Today's Session"), findsOneWidget);
+    });
+
+    testWidgets('level card shows tier + XP with no progress bar', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({
+        'studyup.tasks.v1': jsonEncode({todayKey(): []}),
+        'studyup.tasks.starterSeeded.v1': true,
+        'studyup.studySessions.v1': jsonEncode([]),
+      });
+      await pumpProgress(tester);
+      expectNoErrors(tester);
+      await tester.scrollUntilVisible(
+        find.text('Novice'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pump();
+      // Level amount, tier name and total XP are shown.
+      expect(find.text('Level'), findsOneWidget);
+      expect(find.text('Novice'), findsOneWidget);
+      expect(find.text('0 XP'), findsOneWidget);
+      // The old per-level XP progress bar and label are gone.
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(find.text('Study level'), findsNothing);
     });
   });
 }

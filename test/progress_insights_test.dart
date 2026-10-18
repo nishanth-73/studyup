@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -68,10 +69,13 @@ void main() {
     ],
   );
 
-  Future<void> pumpProgress(WidgetTester tester) async {
+  Future<void> pumpProgress(
+    WidgetTester tester, {
+    Size viewport = const Size(800, 1800),
+  }) async {
     // Tall viewport: the monthly card sits below the fold on phones and
     // ListView lazily builds it only when scrolled into cache range.
-    tester.view.physicalSize = const Size(800, 1800);
+    tester.view.physicalSize = viewport;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     final router = testRouter();
@@ -135,6 +139,36 @@ void main() {
       // button is gone (months change by swiping the grid) and chart
       // cards have none until Compare.
       expect(datePickerIcons(tester), findsNothing);
+    });
+
+    testWidgets('monthly chart animates only while visible and replays', (
+      tester,
+    ) async {
+      await pumpProgress(tester, viewport: const Size(400, 800));
+      await tester.tap(find.text('Insights'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.byType(LineChart), findsNothing);
+      final pageScroll = find.byWidgetPredicate(
+        (widget) =>
+            widget is Scrollable && widget.axisDirection == AxisDirection.down,
+      );
+
+      final pageScrollState = tester.state<ScrollableState>(pageScroll);
+      await tester.pumpAndSettle();
+      pageScrollState.position.jumpTo(pageScrollState.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(find.byType(LineChart), findsOneWidget);
+
+      pageScrollState.position.jumpTo(0);
+      await tester.pumpAndSettle();
+      expect(find.byType(LineChart), findsNothing);
+
+      pageScrollState.position.jumpTo(pageScrollState.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(find.byType(LineChart), findsOneWidget);
+      expectNoErrors(tester);
     });
 
     Finder weekRow(String label) => find.descendant(

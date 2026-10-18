@@ -387,7 +387,7 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen> {
       await remote.respondToRequest(requestId, accept);
       ref.invalidate(remoteIncomingProvider);
       ref.invalidate(remoteFriendsProvider);
-      ref.invalidate(communityDisplayProvider);
+      ref.invalidate(remoteFriendsBoardProvider);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -435,7 +435,7 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen> {
                         .read(socialRemoteProvider)
                         ?.removeFriend(f.userId);
                     ref.invalidate(remoteFriendsProvider);
-                    ref.invalidate(communityDisplayProvider);
+                    ref.invalidate(remoteFriendsBoardProvider);
                   } catch (error) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(

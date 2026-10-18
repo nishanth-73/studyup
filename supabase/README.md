@@ -40,9 +40,11 @@ are committed; the service-role key is never in the app.
 - Invitations — `POST /invite/:token` route + accept screen (preview,
   login handoff, single-use token validation, self/duplicate/expiry
   handling, copy-link fallback). Native share sheet via `share_plus`.
-  Android App Link intent-filter (primary host
-  `studyup-feedback-api.vercel.app`, legacy `invite.studyup.app` also
-  accepted, autoVerify) plus `studyup://invite/` fallback;
+   Android App Link intent-filter (primary host the Vercel project
+   domain `studyup-4x7z-medurinishanth78-6030s-projects.vercel.app`;
+   earlier `studyup-feedback-api.vercel.app` and legacy
+   `invite.studyup.app` also accepted, autoVerify) plus
+   `studyup://invite/` fallback;
   `supabase/assetlinks/` template, deployed from
   `public/.well-known/assetlinks.json`.
 - Auth callbacks — `com.studyup.studyup://login-callback/` custom-scheme
@@ -111,9 +113,16 @@ These cannot be completed without your domain + signing keys + store
 presence. The app is fully coded for them; only configuration remains.
 
 1. **Invite domain**: the App Links host is
-   `studyup-feedback-api.vercel.app` (the Vercel feedback project —
-   `INVITE_HOST` default; override with `--dart-define=INVITE_HOST=...`
-   for a custom domain). The same Vercel deployment must serve
+   `studyup-4x7z-medurinishanth78-6030s-projects.vercel.app` (the
+   stable Vercel project domain — `INVITE_HOST` default; override with
+   `--dart-define=INVITE_HOST=...` for a custom domain). Use the stable
+   project domain, never a per-deployment URL
+   (`studyup-4x7z-<hash>-...vercel.app`): deployment URLs change on
+   every deploy. FIRST disable Vercel Deployment Protection (Project →
+   Settings → Deployment Protection → Vercel Authentication →
+   Disabled): while it is on, anonymous visitors, Android App Links
+   verification and the app's feedback requests are all redirected to
+   a Vercel login page. The same Vercel deployment must serve
    `/.well-known/assetlinks.json`; `public/.well-known/assetlinks.json`
    is the deployed copy (kept identical to
    `supabase/assetlinks/assetlinks.json`; `node --test
@@ -217,7 +226,8 @@ never talks to api.resend.com and holds no email secrets.
    not found"}`; the app now detects exactly that, keeps the draft, and
    retries the same submission against `FEEDBACK_API_URL` when set,
    otherwise the hosted default
-   `https://studyup-feedback-api.vercel.app/api/feedback`. Real errors a
+   `https://studyup-4x7z-medurinishanth78-6030s-projects.vercel.app/api/feedback`.
+   Real errors a
    deployed transport answered (validation, rate limit, 5xx, timeout)
    are never retried blindly — only the never-seen-by-anyone
    undeployed-function case falls through, so no duplicate email is

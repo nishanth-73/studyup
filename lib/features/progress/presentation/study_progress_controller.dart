@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/study_gamification.dart';
 import '../data/study_session.dart';
 import '../data/study_day.dart' show nextStudyResetAt;
 import '../../../core/notifications/notification_service.dart';
@@ -14,12 +15,17 @@ import '../../robo/robo_events.dart';
 class StudyProgressState {
   final List<StudySession> sessions;
   final int dailyStudyGoalMinutes;
+
+  /// Append-only XP award ledger (10 per goal-met day, 50 per full-goal
+  /// week). XP is the sum of its awards; nothing ever resets it.
+  final XpLedger xp;
   final bool isLoaded;
   final Object? error;
 
   const StudyProgressState({
     this.sessions = const [],
     this.dailyStudyGoalMinutes = defaultDailyStudyGoalMinutes,
+    this.xp = const XpLedger(),
     this.isLoaded = false,
     this.error,
   });
@@ -301,12 +307,14 @@ class StudyProgressState {
   StudyProgressState copyWith({
     List<StudySession>? sessions,
     int? dailyStudyGoalMinutes,
+    XpLedger? xp,
     bool? isLoaded,
     Object? error,
     bool clearError = false,
   }) => StudyProgressState(
     sessions: sessions ?? this.sessions,
     dailyStudyGoalMinutes: dailyStudyGoalMinutes ?? this.dailyStudyGoalMinutes,
+    xp: xp ?? this.xp,
     isLoaded: isLoaded ?? this.isLoaded,
     error: clearError ? null : error ?? this.error,
   );
@@ -332,8 +340,13 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
 
   static const _storageKey = 'studyup.studySessions.v1';
   static const _dailyGoalStorageKey = 'studyup.dailyStudyGoalMinutes.v1';
+  static const _xpStorageKey = 'studyup.xpLedger.v1';
   Timer? _activeTicker;
   Future<void> _writeQueue = Future<void>.value();
+
+  /// Serializes XP evaluations so concurrent saves/ticks can never
+  /// overwrite each other's awards (each run re-reads the latest ledger).
+  Future<void> _xpQueue = Future<void>.value();
 
   /// Serializes check-in/check-out operations so rapid repeated taps can
   /// never create duplicate sessions or overlapping timers: each operation
@@ -354,6 +367,18 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
       final goal =
           preferences.getInt(_dailyGoalStorageKey) ??
           defaultDailyStudyGoalMinutes;
+      final rawXp = preferences.getString(_xpStorageKey);
+      var storedXp = const XpLedger();
+      if (rawXp != null) {
+        try {
+          storedXp = XpLedger.fromJson(
+            Map<String, Object?>.from(jsonDecode(rawXp) as Map),
+          );
+        } catch (_) {
+          // Corrupt ledger: rebuilt from the real history below.
+          storedXp = const XpLedger();
+        }
+      }
       final sessions = raw == null
           ? <StudySession>[]
           : (jsonDecode(raw) as List<Object?>)
@@ -368,18 +393,29 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
           'Stored study data contains more than one active session.',
         );
       }
+      if (!mounted) return;
       state = state.copyWith(
         sessions: sessions,
         dailyStudyGoalMinutes: goal,
+        xp: storedXp,
         isLoaded: true,
       );
       _syncTicker();
       await _finalizeStalePaused(DateTime.now());
+      if (!mounted) return;
       // Adopt any persisted running session into the live timer (restarts
       // the service after process death); re-post a paused session's
       // frozen status; clear the tray when nothing is active.
       await _adoptLiveTimer(DateTime.now());
+      if (!mounted) return;
+      // Full rescan: calculates every goal-met day and full-goal week
+      // from real session history: backfills users who studied before
+      // this feature shipped, adopts time that accrued while a paused or
+      // killed timer crossed day/week boundaries, and re-derives a
+      // corrupt ledger. Ledger set-membership keeps it duplicate-free.
+      await _syncXp(DateTime.now(), full: true);
     } catch (error, stackTrace) {
+      if (!mounted) return;
       FlutterError.reportError(
         FlutterErrorDetails(
           exception: error,
@@ -736,6 +772,9 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
     // once-per-day record: lowering the goal after a big study day notifies
     // at most once; raising it simply stops notifying until reached again.
     unawaited(_checkGoalReached(DateTime.now()));
+    // XP awards re-derive against the new goal: lowering it can award
+    // past days/weeks that now qualify; awards already earned stay.
+    unawaited(_syncXp(DateTime.now(), full: true));
   }
 
   Future<void> _save(List<StudySession> sessions) async {
@@ -756,17 +795,74 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
     );
     _syncTicker();
     // Daily-goal check runs on the same saved data the charts consume, so
-    // timer math, XP, and progress displays are untouched. The service
-    // persists the notified day, surviving restarts without re-notifying.
+    // timer math, XP awards, and progress displays stay consistent. The
+    // service persists the notified day, surviving restarts without
+    // re-notifying; the XP ledger does the same for awards.
     unawaited(_checkGoalReached(DateTime.now()));
+  }
+
+  /// Serialized XP evaluation: awards newly qualified days/weeks and
+  /// persists the ledger only when it actually changed.
+  Future<void> _syncXp(DateTime now, {bool full = false}) {
+    final next = _xpQueue
+        .catchError((Object _) {})
+        .then((_) => _syncXpNow(now, full: full));
+    _xpQueue = next.catchError((Object _) {});
+    return next;
+  }
+
+  Future<void> _syncXpNow(DateTime now, {required bool full}) async {
+    try {
+      // The queue is fire-and-forget: a controller can be disposed while a
+      // sync is still pending (tests, provider teardown), so bail quietly.
+      if (!mounted) return;
+      if (!state.isLoaded || state.error != null) return;
+      if (state.dailyStudyGoalMinutes <= 0) return;
+      final updated = syncXpAwards(
+        ledger: state.xp,
+        dailyGoalMinutes: state.dailyStudyGoalMinutes,
+        now: now,
+        minutesForDay: (day) => state.minutesForDate(day, now: now),
+        minutesForWeek: (monday) => state.minutesForWeek(monday, now: now),
+        earliestDay: earliestStudyDay(state.sessions, now),
+        full: full,
+      );
+      if (identical(updated, state.xp)) return;
+      final preferences = await SharedPreferences.getInstance();
+      final saved = await preferences.setString(
+        _xpStorageKey,
+        jsonEncode(updated.toJson()),
+      );
+      // Even if persisting fails the awards are safe: a missing/corrupt
+      // ledger is rebuilt from the same history on the next full rescan,
+      // which yields the identical (deduplicated) award set.
+      if (!saved) return;
+      // Disposal can happen while the write was in flight; the ledger is
+      // already persisted, and a disposed controller has no UI to update.
+      if (!mounted) return;
+      state = state.copyWith(xp: updated);
+    } catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'study progress',
+          context: ErrorDescription('while updating XP awards'),
+        ),
+      );
+    }
   }
 
   /// Evaluates today's actual recorded minutes against the shared goal.
   /// Cross-midnight sessions split by the app's real midnight-bucket
   /// aggregation ([minutesForDate]), so each local day notifies at most
-  /// once, on the day it actually crosses the goal.
+  /// once, on the day it actually crosses the goal. Also refreshes the XP
+  /// ledger (same ticker cadence), so a day's 10 XP lands the moment the
+  /// goal is crossed — from a save or from the throttled 30s tick.
   Future<void> _checkGoalReached(DateTime now) async {
     try {
+      await _syncXp(now);
+      if (!mounted) return;
       final today = DateTime(now.year, now.month, now.day);
       final minutes = state.minutesForDate(today, now: now);
       final crossed = await NotificationService.instance.maybeNotifyGoalReached(

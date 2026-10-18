@@ -1,11 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:studyup/core/backend/supabase_config.dart';
 import 'package:studyup/features/auth/data/auth_controller.dart';
 import 'package:studyup/features/community/data/community_store.dart';
 import 'package:studyup/features/community/presentation/community_controller.dart';
@@ -61,6 +63,26 @@ class _BoardRemote extends SocialRemote {
   @override
   RealtimeChannel subscribeIncomingRequests(void Function() onChange) =>
       client.channel('test-requests');
+}
+
+class _InviteShareRemote extends _BoardRemote {
+  _InviteShareRemote()
+    : super._(
+        SupabaseClient(
+          'https://example.supabase.co',
+          'test-anon-key',
+          authOptions: const AuthClientOptions(autoRefreshToken: false),
+        ),
+      );
+
+  static const token = 'abcdef1234567890abcdef1234567890';
+  int createInvitationCalls = 0;
+
+  @override
+  Future<String> createInvitation({int validDays = 7}) async {
+    createInvitationCalls++;
+    return token;
+  }
 }
 
 /// Regression tests for the Community tab:
@@ -157,6 +179,49 @@ void main() {
     expect(find.text('Challenges'), findsNothing);
   });
 
+  testWidgets('shares a clean server invitation URL, never a SUP1 payload', (
+    tester,
+  ) async {
+    final remote = _InviteShareRemote();
+    String? sharedText;
+    const shareChannel = MethodChannel('dev.fluttercommunity.plus/share');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(shareChannel, (call) async {
+          expect(call.method, 'share');
+          sharedText =
+              (call.arguments as Map<Object?, Object?>)['text'] as String;
+          return 'success';
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(shareChannel, null),
+    );
+
+    await pumpCommunity(
+      tester,
+      overrides: [
+        socialLiveProvider.overrideWithValue(true),
+        socialRemoteProvider.overrideWithValue(remote),
+        communityDisplayProvider.overrideWith((ref, weekStart) async => []),
+      ],
+    );
+    await tester.scrollUntilVisible(
+      find.text('Invite Friends & Start Competing'),
+      300,
+    );
+    await tester.tap(find.text('Invite Friends & Start Competing'));
+    await tester.pumpAndSettle();
+
+    expect(remote.createInvitationCalls, 1);
+    expect(
+      sharedText,
+      "Join me on StudyUp! Let's track our study progress and compete together: "
+      'https://${SupabaseConfig.inviteHost}/i/${_InviteShareRemote.token}',
+    );
+    expect(sharedText, isNot(contains('SUP1-')));
+    expect(sharedText, isNot(contains('"uid"')));
+  });
+
   testWidgets('podium ranks a real session and highlights the user', (
     tester,
   ) async {
@@ -236,9 +301,21 @@ void main() {
     expect(find.textContaining('Last Week'), findsOneWidget);
   });
 
-  testWidgets('invite button generates a code without crashing', (
+  testWidgets('offline invite button does not share the encoded payload', (
     tester,
   ) async {
+    var shareCalled = false;
+    const shareChannel = MethodChannel('dev.fluttercommunity.plus/share');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(shareChannel, (call) async {
+          shareCalled = true;
+          return 'success';
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(shareChannel, null),
+    );
+
     await pumpCommunity(tester);
     await tester.scrollUntilVisible(
       find.text('Invite Friends & Start Competing'),
@@ -246,9 +323,13 @@ void main() {
     );
     await tester.tap(find.text('Invite Friends & Start Competing'));
     await tester.pumpAndSettle();
-    // share_plus has no real target in widget tests: either the native
-    // sheet call resolves or the clipboard fallback runs — both must be
-    // crash-free. (Fallback content is covered by codec unit tests.)
+    expect(
+      find.text(
+        'Sign in to create a shareable invitation link. You can still share an invite code from Friends.',
+      ),
+      findsOneWidget,
+    );
+    expect(shareCalled, isFalse);
     expect(tester.takeException(), isNull);
   });
 

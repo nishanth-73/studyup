@@ -411,8 +411,10 @@ class LeaderboardEntry {
   /// snapshot; null when unknown.
   final int? streakDays;
 
-  /// StudyUp level (1 minute = 1 XP rule). For friends it derives from
-  /// their shared all-time total; null when unknown.
+  /// StudyUp level from the tier thresholds (100–2,500 XP per level).
+  /// Self uses the local XP ledger; for friends the server only shares
+  /// all-time total seconds, so their level derives from that total
+  /// through the same threshold table; null when unknown.
   final int? level;
 
   final int rank;
