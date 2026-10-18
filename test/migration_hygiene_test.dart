@@ -10,12 +10,15 @@ void main() {
   late String f1;
   late String f2;
   late String f3;
+  late String f4;
 
   setUpAll(() {
     f1 = File('supabase/migrations/20261015_community.sql').readAsStringSync();
     f2 = File('supabase/migrations/20261102_social_backend.sql')
         .readAsStringSync();
     f3 = File('supabase/migrations/20261104_hardening_fix.sql')
+        .readAsStringSync();
+    f4 = File('supabase/migrations/20261112_friends_zero_progress.sql')
         .readAsStringSync();
   });
 
@@ -150,6 +153,81 @@ void main() {
       expect(f3.toLowerCase(), isNot(contains('create policy')));
       expect(f3.toLowerCase(), isNot(contains('drop table')));
       expect(f3.toLowerCase(), isNot(contains('delete from')));
+    });
+  });
+
+  // Shared study progress must reach ACCEPTED FRIENDS ONLY — and only as
+  // aggregates computed inside a SECURITY DEFINER function. Raw segments
+  // and session_days rows must stay owner-only, and a user who is not a
+  // friend must never appear in the friends scope.
+  group('shared progress privacy', () {
+    test('raw study segments are owner-only; only day aggregates are shared', () {
+      // study_sessions holds the raw segments: strictly owner-only.
+      final sessionsIdx = f2.indexOf('create policy "owner manages sessions"');
+      expect(sessionsIdx, greaterThanOrEqualTo(0));
+      expect(
+        f2.substring(sessionsIdx, sessionsIdx + 300),
+        contains('auth.uid() = user_id'),
+      );
+      // session_days holds per-day AGGREGATES (the shareable unit) and is
+      // deliberately readable by accepted friends — and by opted-in users
+      // for the public board. Neither may expose raw session detail.
+      final friendsIdx = f2.indexOf('create policy "friends read day aggregates"');
+      expect(friendsIdx, greaterThanOrEqualTo(0));
+      expect(
+        f2.substring(friendsIdx, friendsIdx + 300),
+        contains('community_are_friends(auth.uid(), user_id)'),
+        reason: 'friends may read aggregates only when actually friends',
+      );
+      // A stranger who is NOT a friend matches neither aggregate policy.
+      final publicIdx = f2.indexOf('create policy "opted-in public aggregates"');
+      expect(publicIdx, greaterThanOrEqualTo(0));
+      expect(
+        f2.substring(publicIdx, publicIdx + 400),
+        contains('p.leaderboard_opt_in'),
+      );
+      // Raw segments never become readable to anyone else.
+      expect(
+        RegExp(
+          'create policy[^;]*on public.study_sessions[^;]*(to anon|to public)',
+          multiLine: true,
+        ).hasMatch(f2.toLowerCase()),
+        isFalse,
+      );
+    });
+
+    test('friends see totals only through the leaderboard_scope RPC', () {
+      final idx = f4.indexOf('create or replace function public.leaderboard_scope');
+      expect(idx, greaterThanOrEqualTo(0));
+      final body = f4.substring(idx);
+      expect(body, contains('security definer'));
+      // Eligibility is friends-or-self, never "everyone" for this scope.
+      expect(body, contains('community_are_friends(auth.uid(), p.id)'));
+      expect(
+        body.contains("when p_scope = 'everyone' then p.leaderboard_opt_in"),
+        isTrue,
+        reason: 'only the public scope requires leaderboard opt-in',
+      );
+      // RPC stays authenticated-only.
+      expect(body, contains('revoke all on function'));
+      expect(body, contains('to authenticated'));
+    });
+
+    test('opted-out members are listed but their numbers are forced to 0', () {
+      // Membership without leaking progress: aggregates are zeroed for
+      // members who did not opt into the leaderboard.
+      final zeros = RegExp(
+        r'case when p\.id = auth\.uid\(\) or p\.leaderboard_opt_in\s+then coalesce\(w\.week_seconds, 0\) else 0 end',
+      ).allMatches(f4).length;
+      expect(zeros, greaterThanOrEqualTo(1));
+      // …and the same guard is applied to every aggregate column.
+      for (final column in ['wd.active_days', 't.total_seconds', 's.streak_days']) {
+        expect(
+          f4.contains('then coalesce($column, 0) else 0 end'),
+          isTrue,
+          reason: '$column must be zeroed for non-opted-in members',
+        );
+      }
     });
   });
 }

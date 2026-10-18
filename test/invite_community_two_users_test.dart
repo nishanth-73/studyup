@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:studyup/features/auth/data/auth_controller.dart';
+import 'package:studyup/features/community/data/community_models.dart';
 import 'package:studyup/features/progress/presentation/study_progress_controller.dart';
 import 'package:studyup/features/social/data/social_providers.dart';
 import 'package:studyup/features/social/data/social_remote.dart';
@@ -144,6 +145,15 @@ class _ViewerRemote extends SocialRemote {
   final _FakeServer server;
   final String viewer;
   int acceptCalls = 0;
+  Object? leaderboardError;
+
+  @override
+  Future<List<RemoteBoardRow>> leaderboard({
+    required DateTime weekStart,
+  }) async {
+    if (leaderboardError != null) throw leaderboardError!;
+    return server.boardOf(viewer);
+  }
 
   @override
   Future<InvitePreview> previewInvitation(String rawToken) async =>
@@ -161,11 +171,6 @@ class _ViewerRemote extends SocialRemote {
 
   @override
   Future<List<RemoteFriend>> myFriends() async => server.friendsOf(viewer);
-
-  @override
-  Future<List<RemoteBoardRow>> leaderboard({
-    required DateTime weekStart,
-  }) async => server.boardOf(viewer);
 
   @override
   RealtimeChannel subscribeFriendships(void Function() onChange) {
@@ -418,8 +423,58 @@ void main() {
     final aliceRow = entries.firstWhere((e) => e.memberId == 'A');
     expect(aliceRow.isSelf, isTrue);
     expect(aliceRow.weekSeconds, 0);
-    expect(aliceRow.rank, 2);
+expect(aliceRow.rank, 2);
     // No other members exist: nothing was fabricated.
     expect(entries, hasLength(2));
+  });
+
+  test('two hours of real study time crosses to the friend (not 0m)', () async {
+    SharedPreferences.setMockInitialValues({});
+    final server = _FakeServer()
+      ..addUser(_Profile('A', 'Alice', avatarId: 'avatar-a'))
+      ..addUser(_Profile('B', 'Bob', avatarId: 'avatar-b'));
+    final week = mondayOf(DateTime.now());
+    final alice = _ViewerRemote(server, 'A');
+    final bob = _ViewerRemote(server, 'B');
+    final aliceContainer = _viewerContainer(alice, 'A');
+    final bobContainer = _viewerContainer(bob, 'B');
+    addTearDown(aliceContainer.dispose);
+    addTearDown(bobContainer.dispose);
+    await ready(aliceContainer);
+    await ready(bobContainer);
+
+    final token = await alice.createInvitation();
+    await bob.acceptInvitation(token);
+
+    // Alice studies ~2h this week; the server holds the aggregate.
+    server.weekSeconds['A'] = 7200;
+    server.totalSeconds['A'] = 7200;
+
+    // Bob's screen: Alice must show the REAL duration, not 0m.
+    final bEntries = await bobContainer.read(
+      communityDisplayProvider(week).future,
+    );
+    final aliceRow = bEntries.firstWhere((e) => e.memberId == 'A');
+    expect(aliceRow.weekSeconds, 7200);
+    expect(formatHoursMinutes(aliceRow.weekSeconds), '2h 00m');
+    expect(aliceRow.hasData, isTrue);
+    expect(aliceRow.displayName, 'Alice');
+
+    // The same underlying total is visible in both directions: the query
+    // both users run against is the same friends scope with the same week
+    // window, so nobody sees a different number than the other.
+final aEntries = await aliceContainer.read(
+      communityDisplayProvider(week).future,
+    );
+    final bobRow = aEntries.firstWhere((e) => e.memberId == 'B');
+    expect(bobRow.hasData, isFalse, reason: 'Bob has not studied yet');
+expect(bobRow.weekSeconds, 0, reason: 'a genuine zero, not a failure');
+    // Both users run the same friends-scope query over the same week, so
+    // each side's raw result set is identical: no one can see a different
+    // number than the other.
+    final bIds = server.boardOf('B').map((r) => r.userId).toSet();
+    final aIds = server.boardOf('A').map((r) => r.userId).toSet();
+expect(bIds, aIds);
+    expect(bIds, containsAll(<String>['A', 'B']));
   });
 }

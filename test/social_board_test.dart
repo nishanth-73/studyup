@@ -46,6 +46,12 @@ class _FakeRemote extends SocialRemote {
   void Function()? friendsChanged;
   void Function()? requestsChanged;
 
+  // The session-sync service keys its "already uploaded" ledger by the
+  // authenticated user id; a fake client has none, so supply the one the
+  // provider overrides report.
+  @override
+  String get userId => 'me';
+
   @override
   Future<void> upsertSession(StudySession session) async {
     upsertCalls++;

@@ -240,7 +240,7 @@ class CommunityScreen extends ConsumerWidget {
           const SizedBox(height: 16),
           Text('Leaderboard', style: AppTextStyles.section18),
           const SizedBox(height: 8),
-          _fullLeaderboard(entries, data),
+          _fullLeaderboard(entries),
           const SizedBox(height: 16),
           PrimaryButton(
             label: 'Invite Friends & Start Competing',
@@ -601,10 +601,15 @@ class CommunityScreen extends ConsumerWidget {
 
   // ---------- 4. full leaderboard ----------
 
-  Widget _fullLeaderboard(List<LeaderboardEntry> entries, CommunityData data) {
+  Widget _fullLeaderboard(List<LeaderboardEntry> entries) {
+    // One list for everyone: ranked members first, then accepted friends
+    // who genuinely have no completed study time in this week (shown as a
+    // real 0, never as "waiting"). The previous split hid accepted friends
+    // in a separate "Waiting for shared data" card, which read as if their
+    // progress had not arrived even when the data was simply not uploaded.
     final ranked = entries.where((e) => e.hasData).toList();
-    final waiting = entries.where((e) => !e.hasData).toList();
-    if (ranked.isEmpty && waiting.isEmpty) {
+    final unranked = entries.where((e) => !e.hasData).toList();
+    if (ranked.isEmpty && unranked.isEmpty) {
       return const CommunityEmpty(
         title: 'Nobody here yet',
         body: 'Invite friends to compete. Your totals appear automatically as you study.',
@@ -612,70 +617,14 @@ class CommunityScreen extends ConsumerWidget {
     }
     return Column(
       children: [
-        if (ranked.isNotEmpty)
-          CommunityCard(
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: [
-                for (var i = 0; i < ranked.length; i++) ...[
-                  _leaderRow(ranked[i]),
-                  if (i < ranked.length - 1)
-                    const Divider(
-                      height: 1,
-                      indent: 16,
-                      endIndent: 16,
-                      color: AppColors.track,
-                    ),
-                ],
-              ],
-            ),
+        CommunityCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              for (final e in [...ranked, ...unranked]) _leaderRow(e),
+            ],
           ),
-        if (waiting.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          CommunityCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Waiting for shared data', style: AppTextStyles.body15),
-                const SizedBox(height: 4),
-                Text(
-                  'These friends have not shared this week\u2019s totals yet — listed without ranks, never as zero.',
-                  style: AppTextStyles.secondary14,
-                ),
-                const SizedBox(height: 8),
-                for (final e in waiting)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 5),
-                    child: Row(
-                      children: [
-                        CommunityAvatar(
-                          displayName: e.displayName,
-                          avatarId: e.avatarId,
-                          blobVariant: e.blobVariant,
-                          radius: 15,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            e.displayName,
-                            style: AppTextStyles.body14,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (e.isSelf)
-                          const Pill(
-                            'You',
-                            background: AppColors.cta,
-                            foreground: AppColors.onCta,
-                          ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ],
     );
   }

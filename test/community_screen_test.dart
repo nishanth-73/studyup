@@ -92,6 +92,30 @@ class _InviteShareRemote extends _BoardRemote {
   }
 }
 
+/// A server whose aggregate query fails, to prove the UI shows a retry
+/// state instead of fabricated zeros.
+class _FailingRemote extends _BoardRemote {
+  _FailingRemote()
+    : super._(
+        SupabaseClient(
+          'https://example.supabase.co',
+          'test-anon-key',
+          authOptions: const AuthClientOptions(autoRefreshToken: false),
+        ),
+      );
+
+  bool failing = true;
+  List<RemoteBoardRow> rowsByWeek = const [];
+
+  @override
+  Future<List<RemoteBoardRow>> leaderboard({
+    required DateTime weekStart,
+  }) async {
+    if (failing) throw Exception('connection reset');
+    return rowsByWeek;
+  }
+}
+
 /// A signed-in board whose ONLY friend has never studied: the server
 /// returns no rows for them, so they exist purely as a friendship.
 class _ZeroProgressRemote extends _BoardRemote {
@@ -454,10 +478,72 @@ void main() {
     expect(find.text('You vs. Top Friend'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Leaderboard'), 300);
     expect(find.text('Leaderboard'), findsOneWidget);
-    expect(find.text('Waiting for shared data'), findsOneWidget);
+    // Accepted friends live in the ONE leaderboard list — a friend with no
+    // study time shows a genuine 0m, not a separate "waiting" card.
+    expect(find.text('Brother'), findsWidgets);
+    expect(find.text('0m'), findsWidgets);
+    expect(find.textContaining('Waiting for shared data'), findsNothing);
     expect(tester.takeException(), isNull);
     // The removed instructional "Tip:" text must stay gone.
     expect(find.textContaining('Tip:'), findsNothing);
+  });
+
+  testWidgets('a failed board query shows a retry state, never fake zeros', (
+    tester,
+  ) async {
+    final remote = _FailingRemote();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          socialLiveProvider.overrideWithValue(true),
+          backendUserIdProvider.overrideWithValue('me'),
+          socialRemoteProvider.overrideWithValue(remote),
+        ],
+        child: MaterialApp.router(
+          routerConfig: GoRouter(
+            initialLocation: '/community',
+            routes: [
+              GoRoute(
+                path: '/community',
+                builder: (_, _) => const CommunityScreen(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    // The failure surfaces as an explicit retry state. It must NOT be
+    // rendered as a friend with 0m, and never as "has not shared".
+    expect(find.text('Something went wrong'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(find.textContaining('Waiting for shared data'), findsNothing);
+
+    // The server recovers: the existing retry path refetches and shows the
+    // real totals, with no sign-out and no fresh invitation.
+    remote.failing = false;
+    remote.rowsByWeek = const [
+      RemoteBoardRow(
+        userId: 'me',
+        displayName: 'Tester',
+        avatarId: 'avatar1',
+        blobVariant: 1,
+        weekSeconds: 3600,
+        activeDays: 1,
+        totalSeconds: 3600,
+        streakDays: 1,
+      ),
+    ];
+    await tester.tap(find.text('Try again'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(find.text('Something went wrong'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Leaderboard'), 300);
+    expect(find.text('Leaderboard'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Community picks up a friendship accepted on the other phone', (

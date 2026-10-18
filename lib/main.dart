@@ -9,6 +9,7 @@ import 'core/deeplink/invite_links.dart';
 import 'core/notifications/notification_service.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'features/social/data/social_providers.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,10 +64,21 @@ void main() async {
   });
 }
 
-class StudyUpApp extends StatelessWidget {
+/// App root.
+///
+/// It also hosts [sessionSyncTriggerProvider] for the WHOLE app lifetime.
+/// That trigger used to be watched only by the startup gate, which
+/// unmounts as soon as the router navigates to /home or /community — so a
+/// session that ended while the user was anywhere else in the app was never
+/// uploaded, and friends saw 0m (or "waiting") for data that existed on the
+/// device. Watching it here makes every ended session sync immediately,
+/// whatever screen is open. No-op when signed out or offline.
+class StudyUpApp extends ConsumerWidget {
   const StudyUpApp({super.key});
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(sessionSyncTriggerProvider);
     return MaterialApp.router(
       title: 'StudyUp — Phase 1 UI',
       debugShowCheckedModeBanner: false,
