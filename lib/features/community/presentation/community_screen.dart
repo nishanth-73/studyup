@@ -438,9 +438,22 @@ class CommunityScreen extends ConsumerWidget {
   // ---------- 3. comparison ----------
 
   Widget _comparison(List<LeaderboardEntry> entries) {
-    final ranked = entries.where((e) => e.hasData).toList();
-    final self = ranked.where((e) => e.isSelf).firstOrNull;
-    final friend = ranked.where((e) => !e.isSelf).firstOrNull;
+    final self = entries.where((e) => e.isSelf).firstOrNull;
+    // The top FRIEND, whether or not they have shared totals this week: a
+    // brand-new friend with zero progress is still a real friend, and the
+    // comparison must show honest zeros rather than claim there is nobody.
+    final friends = entries.where((e) => !e.isSelf).toList()
+      ..sort((a, b) {
+        if (a.hasData != b.hasData) return a.hasData ? -1 : 1;
+        if (a.hasData && b.hasData) {
+          final bySeconds = b.weekSeconds.compareTo(a.weekSeconds);
+          if (bySeconds != 0) return bySeconds;
+        }
+        return a.displayName.toLowerCase().compareTo(
+          b.displayName.toLowerCase(),
+        );
+      });
+    final friend = friends.firstOrNull;
     if (self == null) {
       return const CommunityEmpty(
         title: 'Sharing is off',
@@ -829,8 +842,11 @@ class CommunityScreen extends ConsumerWidget {
   }
 }
 
-/// Revalidates the leaderboard when the app returns to the foreground
-/// (a friend may have studied while we were away). Cleanup on dispose.
+/// Revalidates the friends + leaderboard when the screen appears and when
+/// the app returns to the foreground: a friend may have accepted an
+/// invitation (or studied) while we were away. Refreshing MEMBERSHIP as
+/// well as statistics is what makes a newly accepted friend appear without
+/// an app restart. Cleanup on dispose.
 class _ResumeRefresh extends ConsumerStatefulWidget {
   final DateTime weekStart;
   final Widget child;
@@ -843,10 +859,23 @@ class _ResumeRefresh extends ConsumerStatefulWidget {
 
 class _ResumeRefreshState extends ConsumerState<_ResumeRefresh>
     with WidgetsBindingObserver {
+  /// Both layers: the friendship list (membership, including friends with
+  /// no shared data) and the server board rows (progress). Self is always
+  /// computed locally and needs no refetch.
+  void _refresh() {
+    ref.invalidate(remoteFriendsProvider);
+    ref.invalidate(remoteFriendsBoardProvider);
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Entering the Community tab always re-reads the accepted friends, so a
+    // friend who accepted while the user was elsewhere shows up here.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _refresh();
+    });
   }
 
   @override
@@ -859,7 +888,7 @@ class _ResumeRefreshState extends ConsumerState<_ResumeRefresh>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       // Refetch friend rows; the local self row is always live.
-      ref.invalidate(remoteFriendsBoardProvider);
+      _refresh();
     }
   }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -213,6 +215,79 @@ void main() {
       findsOneWidget,
     );
     expect(remote.acceptCalls, isEmpty);
+  });
+
+  testWidgets(
+    'a signed-in user is never asked to sign in again while auth restores',
+    (tester) async {
+      // Cold start: Supabase.initialize() starts session recovery without
+      // awaiting it, so `currentUser` is null for a moment. The screen must
+      // show a loading state — NOT a login prompt — and switch to Accept as
+      // soon as the session appears.
+      final settled = Completer<bool>();
+      final signedIn = StateProvider<String?>((_) => null);
+      final remote = _FakeRemote();
+
+      final router = GoRouter(
+        initialLocation: '/invite/$_token',
+        routes: [
+          GoRoute(
+            path: '/invite/:token',
+            builder: (_, s) =>
+                InviteAcceptScreen(token: s.pathParameters['token'] ?? ''),
+          ),
+          GoRoute(path: '/home', builder: (_, _) => const Text('HOME')),
+          GoRoute(path: '/auth', builder: (_, _) => const Text('AUTH')),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            inviteRemoteProvider.overrideWithValue(remote),
+            backendUserIdProvider.overrideWith((ref) => ref.watch(signedIn)),
+            authSettledProvider.overrideWith((ref) => settled.future),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Recovery in flight: no login screen, no navigation away.
+      expect(find.text('Sign in / Sign up'), findsNothing);
+      expect(find.text('AUTH'), findsNothing);
+      expect(remote.acceptCalls, isEmpty);
+
+      // Session restored: Accept/Decline appear, still no login screen.
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(InviteAcceptScreen)),
+      );
+      container.read(signedIn.notifier).state = 'me';
+      settled.complete(true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Accept invitation'), findsOneWidget);
+      expect(find.text('Decline'), findsOneWidget);
+      expect(find.text('Sign in / Sign up'), findsNothing);
+      expect(remote.acceptCalls, isEmpty);
+    },
+  );
+
+  testWidgets('the invitation screen carries no instructional text', (
+    tester,
+  ) async {
+    final remote = _FakeRemote();
+    await pumpScreen(tester, remote: remote);
+    expect(find.text('Accept invitation'), findsOneWidget);
+    expect(find.text('Decline'), findsOneWidget);
+    // Removed: the "Tip:"-style guidance and the "open the link / sign in /
+    // tap Accept" explanation.
+    expect(find.textContaining('Nothing happens until you tap Accept'), findsNothing);
+    expect(find.textContaining('Tip'), findsNothing);
+    expect(find.textContaining('open the link'), findsNothing);
+    expect(find.textContaining('friends open your link'), findsNothing);
   });
 
   testWidgets('accept and decline are both offered, side by side', (

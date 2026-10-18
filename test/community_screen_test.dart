@@ -30,6 +30,13 @@ class _BoardRemote extends SocialRemote {
 
   final SupabaseClient client;
 
+  /// Accepted friends. `leaderboard_scope` only returns friends who studied
+  /// in the queried week, so membership comes from this list.
+  final friends = <RemoteFriend>[];
+
+  @override
+  Future<List<RemoteFriend>> myFriends() async => friends;
+
   @override
   Future<List<RemoteBoardRow>> leaderboard({
     required DateTime weekStart,
@@ -83,6 +90,33 @@ class _InviteShareRemote extends _BoardRemote {
     createInvitationCalls++;
     return token;
   }
+}
+
+/// A signed-in board whose ONLY friend has never studied: the server
+/// returns no rows for them, so they exist purely as a friendship.
+class _ZeroProgressRemote extends _BoardRemote {
+  _ZeroProgressRemote()
+    : super._(
+        SupabaseClient(
+          'https://example.supabase.co',
+          'test-anon-key',
+          authOptions: const AuthClientOptions(autoRefreshToken: false),
+        ),
+      ) {
+    friends.add(
+      const RemoteFriend(
+        userId: 'brother',
+        displayName: 'Brother',
+        avatarId: 'avatar1',
+        blobVariant: 1,
+        leaderboardOptIn: true,
+      ),
+    );
+  }
+
+  @override
+  Future<List<RemoteBoardRow>> leaderboard({required DateTime weekStart}) async =>
+      const [];
 }
 
 /// Regression tests for the Community tab:
@@ -375,5 +409,48 @@ void main() {
     expect(find.text('Nova Friend'), findsWidgets);
     // …and demo fixtures never leak into the live board.
     expect(find.text('DEMO'), findsNothing);
+  });
+
+  testWidgets('a zero-progress friend is listed in Community, not hidden', (
+    tester,
+  ) async {
+    final remote = _ZeroProgressRemote();
+    await pumpCommunity(
+      tester,
+      overrides: [
+        socialLiveProvider.overrideWithValue(true),
+        backendUserIdProvider.overrideWithValue('me'),
+        socialRemoteProvider.overrideWithValue(remote),
+      ],
+    );
+    // The accepted friend with zero study time / zero XP is on screen with
+    // their real name — not missing, not faked.
+    await tester.scrollUntilVisible(find.text('Brother'), 400);
+    expect(find.text('Brother'), findsWidgets);
+    // No exceptions from the podium/comparison with a single friend.
+    expect(find.text('Top 3'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Top 3 and comparison render with one zero-progress friend', (
+    tester,
+  ) async {
+    final remote = _ZeroProgressRemote();
+    await pumpCommunity(
+      tester,
+      overrides: [
+        socialLiveProvider.overrideWithValue(true),
+        backendUserIdProvider.overrideWithValue('me'),
+        socialRemoteProvider.overrideWithValue(remote),
+      ],
+    );
+    // Podium and comparison must not crash with fewer than three friends
+    // and no shared data (previously "no routes"/empty-rank edge cases).
+    expect(find.text('Top 3'), findsOneWidget);
+    expect(find.text('You vs. Top Friend'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Leaderboard'), 300);
+    expect(find.text('Leaderboard'), findsOneWidget);
+    expect(find.text('Waiting for shared data'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

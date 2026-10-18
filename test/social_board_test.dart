@@ -37,6 +37,10 @@ class _FakeRemote extends SocialRemote {
   final SupabaseClient client;
   final leaderboardWeeks = <DateTime>[];
   final rowsByWeek = <DateTime, List<RemoteBoardRow>>{};
+  /// Accepted friendships, independent of progress. `leaderboard_scope`
+  /// only returns friends who studied in the queried week, so this list is
+  /// the source of truth for MEMBERSHIP.
+  var friends = <RemoteFriend>[];
   int myFriendsCalls = 0;
   int upsertCalls = 0;
   void Function()? friendsChanged;
@@ -56,7 +60,7 @@ class _FakeRemote extends SocialRemote {
   @override
   Future<List<RemoteFriend>> myFriends() async {
     myFriendsCalls++;
-    return const [];
+    return friends;
   }
 
   @override
@@ -439,5 +443,202 @@ void main() {
     expect(remote.leaderboardWeeks.length, greaterThanOrEqualTo(4));
 
     boardSub.close();
+  });
+
+  // ---- membership vs progress -------------------------------------------
+  //
+  // Production bug: after a friend accepted an invitation, they never
+  // appeared in the inviter's Community. `leaderboard_scope('friends')`
+  // returned no row for a friend with zero study time in the week, and the
+  // client built the board from that fetch alone — so a brand-new friend
+  // (zero time, zero XP) was invisible. Friendship is membership, not
+  // progress.
+
+  Future<void> waitForLoaded(ProviderContainer container) async {
+    container.listen(studyProgressProvider, (_, _) {});
+    for (var i = 0; i < 200; i++) {
+      if (container.read(studyProgressProvider).isLoaded) break;
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(container.read(studyProgressProvider).isLoaded, isTrue);
+  }
+
+  test('a friend with zero study time and zero XP still appears', () async {
+    SharedPreferences.setMockInitialValues({});
+    final week = mondayOf(DateTime.now());
+    final remote = _FakeRemote();
+    // Server returns NOTHING: the friend studied zero minutes this week.
+    remote.rowsByWeek[week] = const [];
+    remote.rowsByWeek[week.subtract(const Duration(days: 7))] = const [];
+    remote.friends = const [
+      RemoteFriend(
+        userId: 'brother',
+        displayName: 'Brother',
+        avatarId: 'robo-brother',
+        blobVariant: 2,
+        leaderboardOptIn: true,
+      ),
+    ];
+    final container = _container(remote);
+    addTearDown(container.dispose);
+    await waitForLoaded(container);
+
+    final entries = await container.read(communityDisplayProvider(week).future);
+
+    final brother = entries.where((e) => e.memberId == 'brother').toList();
+    expect(brother, hasLength(1), reason: 'the new friend must be present');
+    expect(brother.single.displayName, 'Brother');
+    expect(brother.single.avatarId, 'robo-brother');
+    expect(brother.single.blobVariant, 2);
+    // Honest zeros, not missing data and not invented progress.
+    expect(brother.single.weekSeconds, 0);
+    expect(brother.single.hasData, isFalse);
+    expect(brother.single.level, computeStudyLevel(0).level);
+    // Unranked, listed after real data — never a fake rank.
+    expect(brother.single.rank, 0);
+    // Membership is fetched from the friendship list, not from statistics.
+    expect(remote.myFriendsCalls, greaterThanOrEqualTo(1));
+  });
+
+  test('the accepted friend appears on refresh without an app restart', () async {
+    SharedPreferences.setMockInitialValues({});
+    final week = mondayOf(DateTime.now());
+    final remote = _FakeRemote();
+    remote.rowsByWeek[week] = const [];
+    remote.rowsByWeek[week.subtract(const Duration(days: 7))] = const [];
+    final container = _container(remote);
+    addTearDown(container.dispose);
+    await waitForLoaded(container);
+
+    var entries = await container.read(communityDisplayProvider(week).future);
+    expect(
+      entries.where((e) => e.memberId == 'brother'),
+      isEmpty,
+      reason: 'not friends yet',
+    );
+
+    // The brother accepts: the server now reports the friendship.
+    remote.friends = const [
+      RemoteFriend(
+        userId: 'brother',
+        displayName: 'Brother',
+        avatarId: 'robo-brother',
+        blobVariant: 0,
+        leaderboardOptIn: true,
+      ),
+    ];
+    // Exactly what the realtime friendship event does on the inviter side.
+    container.listen(remoteRealtimeProvider, (_, _) {});
+    remote.friendsChanged?.call();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    entries = await container.read(communityDisplayProvider(week).future);
+    expect(entries.where((e) => e.memberId == 'brother'), hasLength(1));
+  });
+
+  test('a friend who later studies gets real statistics, replacing zeros', () async {
+    SharedPreferences.setMockInitialValues({});
+    final week = mondayOf(DateTime.now());
+    final prevWeek = week.subtract(const Duration(days: 7));
+    final remote = _FakeRemote();
+    remote.friends = const [
+      RemoteFriend(
+        userId: 'brother',
+        displayName: 'Brother',
+        avatarId: 'robo-brother',
+        blobVariant: 0,
+        leaderboardOptIn: true,
+      ),
+    ];
+    // First week: server has no row yet (zero progress).
+    remote.rowsByWeek[week] = const [];
+    remote.rowsByWeek[prevWeek] = const [];
+    final container = _container(remote);
+    addTearDown(container.dispose);
+    await waitForLoaded(container);
+
+    var entries = await container.read(communityDisplayProvider(week).future);
+    expect(entries.firstWhere((e) => e.memberId == 'brother').hasData, isFalse);
+
+    // After real sessions sync up, the server row carries real totals and
+    // the membership placeholder is replaced (never duplicated).
+    remote.rowsByWeek[week] = const [
+      RemoteBoardRow(
+        userId: 'brother',
+        displayName: 'Brother',
+        avatarId: 'robo-brother',
+        blobVariant: 0,
+        weekSeconds: 5400,
+        activeDays: 2,
+        totalSeconds: 5400,
+        streakDays: 3,
+      ),
+    ];
+    container.invalidate(remoteFriendsBoardProvider);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    entries = await container.read(communityDisplayProvider(week).future);
+    final brother = entries.where((e) => e.memberId == 'brother').toList();
+    expect(brother, hasLength(1), reason: 'no duplicate rows');
+    expect(brother.single.hasData, isTrue);
+    expect(brother.single.weekSeconds, 5400);
+    expect(brother.single.streakDays, 3);
+    expect(brother.single.rank, greaterThan(0));
+  });
+
+  test('fewer than three friends and zero progress rank without errors', () async {
+    SharedPreferences.setMockInitialValues({});
+    final week = mondayOf(DateTime.now());
+    final remote = _FakeRemote();
+    remote.rowsByWeek[week] = const [];
+    remote.rowsByWeek[week.subtract(const Duration(days: 7))] = const [];
+    // Exactly one friend, who has studied nothing.
+    remote.friends = const [
+      RemoteFriend(
+        userId: 'brother',
+        displayName: 'Brother',
+        avatarId: 'robo-brother',
+        blobVariant: 0,
+        leaderboardOptIn: true,
+      ),
+    ];
+    final container = _container(remote);
+    addTearDown(container.dispose);
+    await waitForLoaded(container);
+
+    final entries = await container.read(communityDisplayProvider(week).future);
+    // self + the one friend: nothing else is invented.
+    expect(entries, hasLength(2));
+    expect(entries.where((e) => e.isSelf), hasLength(1));
+    final friend = entries.where((e) => !e.isSelf).single;
+    expect(friend.memberId, 'brother');
+    // The friend has no data, so holds no rank — and is still listed.
+    expect(friend.hasData, isFalse);
+    expect(friend.rank, 0);
+    expect(friend.weekSeconds, 0);
+  });
+
+  test('a friend who opted out of the leaderboard is not listed', () async {
+    SharedPreferences.setMockInitialValues({});
+    final week = mondayOf(DateTime.now());
+    final remote = _FakeRemote();
+    remote.rowsByWeek[week] = const [];
+    remote.rowsByWeek[week.subtract(const Duration(days: 7))] = const [];
+    remote.friends = const [
+      RemoteFriend(
+        userId: 'private',
+        displayName: 'Private Friend',
+        avatarId: 'robo-private',
+        blobVariant: 0,
+        leaderboardOptIn: false,
+      ),
+    ];
+    final container = _container(remote);
+    addTearDown(container.dispose);
+    await waitForLoaded(container);
+
+    final entries = await container.read(communityDisplayProvider(week).future);
+    // Opted out of sharing: the board must respect that flag.
+    expect(entries.where((e) => e.memberId == 'private'), isEmpty);
   });
 }

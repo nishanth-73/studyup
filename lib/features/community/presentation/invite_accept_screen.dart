@@ -67,10 +67,11 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
         });
         return;
       }
-      final userId = ref.read(backendUserIdProvider);
       setState(() {
         _preview = preview;
-        _phase = userId == null ? _Phase.needsLogin : _Phase.ready;
+        // Auth is decided in build() from the live session, so a restored
+        // session is picked up without re-asking anyone to sign in.
+        _phase = _Phase.ready;
       });
     } catch (_) {
       if (!mounted) return;
@@ -203,59 +204,6 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
             ),
           ],
         );
-      case _Phase.needsLogin:
-        return _card(
-          title: 'You\u2019re invited!',
-          body:
-              '${_preview?.displayName ?? 'A friend'} invited you to join StudyUp. Sign in (or create an account) to accept — this invitation is saved and will resume right after.',
-          actions: [
-            PrimaryButton(
-              label: 'Sign in / Sign up',
-              onPressed: () async {
-                await InviteLinks.stashPending(widget.token);
-                if (mounted) context.go('/auth');
-              },
-            ),
-            _declineButton(),
-          ],
-        );
-      case _Phase.ready:
-        return _card(
-          title: 'You\u2019re invited!',
-          body:
-              '${_preview?.displayName ?? 'A friend'} invited you to join StudyUp.',
-          actions: [
-            Row(
-              children: [
-                CommunityAvatar(
-                  displayName: _preview?.displayName ?? '?',
-                  avatarId: _preview?.avatarId ?? 'robo-default',
-                  blobVariant: 0,
-                  radius: 24,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _preview?.displayName ?? 'Study buddy',
-                    style: AppTextStyles.body15,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            PrimaryButton(label: 'Accept invitation', onPressed: _accept),
-            const SizedBox(height: 10),
-            _declineButton(),
-            const SizedBox(height: 12),
-            Text(
-              'Nothing happens until you tap Accept — opening this link never '
-              'joins you to anyone.',
-              style: AppTextStyles.secondary12,
-            ),
-          ],
-        );
       case _Phase.declined:
         return _card(
           title: 'Invitation declined',
@@ -279,7 +227,70 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
             ),
           ],
         );
+      case _Phase.needsLogin:
+      case _Phase.ready:
+        return _readyBody();
     }
+  }
+
+  /// One screen for both "signed in" and "signed out": the inviter, a short
+  /// message and the two explicit actions. Authentication is resolved from
+  /// the live session, so an existing user is never asked to sign in again
+  /// because their session was still being restored when the link opened.
+  Widget _readyBody() {
+    final signedIn = ref.watch(backendUserIdProvider) != null;
+    // Only ask for sign-in once the backend has actually settled its
+    // session state; until then keep showing the loading state.
+    final settled = ref.watch(authSettledProvider).valueOrNull ?? false;
+    if (!signedIn && !settled) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (!signedIn) {
+      return _card(
+        title: 'You\u2019re invited!',
+        body:
+            '${_preview?.displayName ?? 'A friend'} invited you to join StudyUp. Sign in (or create an account) to accept — this invitation is saved and will resume right after.',
+        actions: [
+          PrimaryButton(
+            label: 'Sign in / Sign up',
+            onPressed: () async {
+              await InviteLinks.stashPending(widget.token);
+              if (mounted) context.go('/auth');
+            },
+          ),
+          _declineButton(),
+        ],
+      );
+    }
+    return _card(
+      title: 'You\u2019re invited!',
+      body: '${_preview?.displayName ?? 'A friend'} invited you to join StudyUp.',
+      actions: [
+        Row(
+          children: [
+            CommunityAvatar(
+              displayName: _preview?.displayName ?? '?',
+              avatarId: _preview?.avatarId ?? 'robo-default',
+              blobVariant: 0,
+              radius: 24,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _preview?.displayName ?? 'Study buddy',
+                style: AppTextStyles.body15,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        PrimaryButton(label: 'Accept invitation', onPressed: _accept),
+        const SizedBox(height: 10),
+        _declineButton(),
+      ],
+    );
   }
 
   Widget _card({

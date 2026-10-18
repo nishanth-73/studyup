@@ -27,6 +27,16 @@ NoTransitionPage<T> _noSlide<T>(Widget child) =>
     NoTransitionPage<T>(child: child);
 
 final GoRouter appRouter = GoRouter(
+  // Invitation App Links arrive as FULL urls (e.g.
+  // https://studyup-4x7z.vercel.app/i/<code>). By default GoRouter adopts
+  // the platform's initial route verbatim, and no route matches a full
+  // url — the first tap therefore failed with
+  // "GoException: no routes for location: https://…/i/…" (rendered as a
+  // raw error screen) while the second tap worked, because the app was
+  // already running by then. Invitation intake is handled explicitly by
+  // InviteLinks (cold start + warm links), so the platform location is
+  // ignored here and every entry point starts at StartupGate.
+  overridePlatformDefaultLocation: true,
   initialLocation: '/',
   routes: [
     GoRoute(path: '/', builder: (_, _) => const StartupGate()),

@@ -52,6 +52,40 @@ final backendUserEmailProvider = Provider<String?>((ref) {
   }
 });
 
+/// True once the backend knows whether a session exists.
+///
+/// `Supabase.initialize()` starts session recovery but does NOT await it
+/// (see supabase_flutter/src/supabase.dart: recoverSession runs inside a
+/// CancelableOperation). On a cold start `currentUser` is therefore null
+/// for a short moment EVEN for a signed-in user — reading it too early
+/// made the invitation screen ask an existing user to sign in again.
+///
+/// Resolution order: a restored session answers immediately; otherwise we
+/// wait for the first auth event (gotrue emits `initialSession` once the
+/// persisted session is restored, `signedOut` when there is none), bounded
+/// so a silent/offline backend can never block the UI.
+final authSettledProvider = FutureProvider<bool>((ref) async {
+  if (!ref.watch(backendLiveProvider)) return true;
+  String? currentUserId() {
+    try {
+      return Supabase.instance.client.auth.currentUser?.id;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  if (currentUserId() != null) return true;
+  final repo = ref.watch(authRepositoryProvider);
+  if (repo == null) return true;
+  try {
+    await repo.authChanges.first.timeout(const Duration(seconds: 6));
+  } catch (_) {
+    // No event (signed out, offline, or backend silent): whatever the
+    // current state is, it is the settled state.
+  }
+  return true;
+});
+
 /// Pending invitation token stashed before sign-in (peeked, not
 /// consumed — the screen that handles it calls takePending). Auto-dispose
 /// so a consumed/cancelled token is never replayed from the cache on a

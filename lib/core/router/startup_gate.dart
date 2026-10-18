@@ -54,11 +54,19 @@ class StartupGate extends ConsumerWidget {
           }
           if (signedIn) {
             // A pending invitation survives sign-in (including the OAuth
-            // browser round-trip): resume it instead of Home.
-            final pending = ref.watch(pendingInviteProvider).valueOrNull;
-            if (pending != null && pending.isNotEmpty) {
-              return InviteAcceptScreen(token: pending);
-            }
+            // browser round-trip) and survives a cold start from an App
+            // Link: resume it instead of Home. The pending lookup is
+            // awaited first so a valid invitation is never flashed away
+            // to Home (or lost) while SharedPreferences is read.
+            final pending = ref.watch(pendingInviteProvider);
+            return pending.when(
+              data: (token) =>
+                  token != null && token.isNotEmpty
+                      ? InviteAcceptScreen(token: token)
+                      : const HomeScreen(),
+              loading: () => const SizedBox.shrink(),
+              error: (_, _) => const HomeScreen(),
+            );
           }
           return const HomeScreen();
         }

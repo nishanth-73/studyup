@@ -164,11 +164,36 @@ LeaderboardEntry _unranked(LeaderboardEntry e) => LeaderboardEntry(
   level: e.level,
 );
 
+/// An accepted friend with no shared statistics yet.
+///
+/// Friendship is membership, not progress: `leaderboard_scope` only
+/// returns friends who logged time in the queried week, so a brand-new
+/// friend (zero study time, zero XP) is invisible there. Their profile
+/// comes from `my_friends()` — a real row, real name, real avatar — with
+/// honest zeros, so they appear instead of vanishing until they study.
+LeaderboardEntry _friendWithoutStats(RemoteFriend f) => LeaderboardEntry(
+  memberId: f.userId,
+  displayName: f.displayName,
+  avatarId: f.avatarId,
+  blobVariant: f.blobVariant,
+  isSelf: false,
+  weekSeconds: 0,
+  hasData: false,
+  rank: 0,
+  streakDays: 0,
+  level: computeStudyLevel(0).level,
+);
+
 Future<List<LeaderboardEntry>> _remoteBoard(
   Ref ref,
   DateTime weekStart,
 ) async {
   final base = await ref.watch(remoteFriendsBoardProvider(weekStart).future);
+  // Accepted friends, independent of progress. Watching the friendship
+  // list here is also what makes a new friend appear on the Community
+  // screen as soon as the relationship is created (realtime invalidation,
+  // post-accept refresh, or the next visit) without an app restart.
+  final friends = await ref.watch(remoteFriendsProvider.future);
   final selfId = ref.watch(backendUserIdProvider)!;
   final self = ref.watch(communitySelfProvider);
   final progress = ref.watch(studyProgressProvider);
@@ -184,6 +209,14 @@ Future<List<LeaderboardEntry>> _remoteBoard(
     weekStart: start,
     now: now,
   );
+  final withMembers = <LeaderboardEntry>[
+    ...base.current,
+    for (final f in friends)
+      if (f.userId != selfId &&
+          f.leaderboardOptIn &&
+          !base.current.any((e) => e.memberId == f.userId))
+        _friendWithoutStats(f),
+  ];
   final prevStart = weekStart.subtract(const Duration(days: 7));
   final prevRanked = Leaderboard.rank(
     unordered: [...base.previous, selfFor(prevStart)],
@@ -193,7 +226,7 @@ Future<List<LeaderboardEntry>> _remoteBoard(
     for (final e in prevRanked.where((e) => e.hasData)) e.memberId: e.rank,
   };
   return Leaderboard.rank(
-    unordered: [selfFor(weekStart), ...base.current],
+    unordered: [selfFor(weekStart), ...withMembers],
     previousRanks: prevRanks,
   );
 }

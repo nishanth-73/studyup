@@ -16,9 +16,10 @@ import '../../features/social/data/social_remote.dart';
 /// browser fallback page applies), or the custom scheme
 /// `studyup://invite/TOKEN` which works with no hosting at all.
 ///
-/// Cold start ([AppLinks.getInitialLink]) and warm links
-/// ([AppLinks.uriLinkStream]) both route to `/invite/TOKEN`. The token is
-/// held as a pending invite when the recipient must sign in first, then
+/// COLD start ([InviteLinks.consumeInitialLink], called from `main`
+/// before `runApp`) and WARM links ([InviteLinks.start], subscribed after
+/// the first frame) both end up on `/invite/TOKEN`. The token is stashed
+/// as a pending invite when the recipient must sign in first, then
 /// resumed after auth.
 class InviteLinks {
   InviteLinks._();
@@ -27,14 +28,35 @@ class InviteLinks {
   static StreamSubscription<Uri>? _sub;
   static bool _started = false;
 
-  /// Starts listening. Safe to call once from [main]; never throws.
+  /// Cold start: the link the app was LAUNCHED with.
+  ///
+  /// Called from `main()` BEFORE `runApp`, so the invitation code is in
+  /// hand before any widget exists — navigating from the listener before
+  /// the router is attached is what made the first tap fail. Returns the
+  /// invitation code, `'invalid'` when the path looks like an invitation
+  /// but carries no usable code (so the screen can show a friendly error),
+  /// or null when the app was not opened from an invitation link.
+  static Future<String?> consumeInitialLink() async {
+    try {
+      final initial = await AppLinks().getInitialLink();
+      if (initial == null) return null;
+      final token = parseInviteToken(initial);
+      if (token != null) return token;
+      return _isInviteLink(initial) ? 'invalid' : null;
+    } catch (error) {
+      debugPrint('Invite link intake unavailable: $error');
+      return null;
+    }
+  }
+
+  /// Starts listening for links delivered while the app is already open
+  /// (warm starts, e.g. tapping the link again from the browser or from a
+  /// chat app). Safe to call once from `main` after `runApp`; never throws.
   static Future<void> start() async {
     if (_started) return;
     _started = true;
     try {
       final links = AppLinks();
-      final initial = await links.getInitialLink();
-      if (initial != null) _route(initial);
       _sub = links.uriLinkStream.listen(_route, onError: (_) {});
     } catch (error) {
       debugPrint('Invite links unavailable: $error');
