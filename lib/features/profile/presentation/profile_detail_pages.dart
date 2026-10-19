@@ -414,9 +414,7 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
     setState(() => _busy = true);
     try {
       if (backendLive) {
-        try {
-          await ref.read(authRepositoryProvider)?.signOut();
-        } catch (_) {}
+        await ref.read(authRepositoryProvider)?.signOut();
         await AuthScreen.clearOfflineMode();
         await clearPostSignInLink();
       }
@@ -478,22 +476,28 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
     if (!ok || !mounted) return;
     setState(() => _busy = true);
     try {
-      // 1. Cancel OS-side effects first (scheduled reminders, live timer).
+      // 1. Clear the local auth session without deleting the online account.
+      if (ref.read(backendUserIdProvider) != null) {
+        final auth = ref.read(authRepositoryProvider);
+        if (auth == null) throw StateError('Authentication is unavailable.');
+        await auth.signOut();
+      }
+      // 2. Cancel OS-side effects (scheduled reminders, live timer).
       try {
         await NotificationService.instance.cancelAllScheduled();
       } catch (_) {}
       try {
         await NotificationService.instance.cancelLiveTimer();
       } catch (_) {}
-      // 2. Delete downloaded attachments (abort before touching prefs if
+      // 3. Delete downloaded attachments (abort before touching prefs if
       // this fails, so success is never claimed after a partial wipe).
       await _deleteDownloadedAttachments();
-      // 3. Wipe local storage (SharedPreferences holds every record type
+      // 4. Wipe local storage (SharedPreferences holds every record type
       // listed above, plus the saved Supabase session).
       final prefs = await SharedPreferences.getInstance();
       final cleared = await prefs.clear();
       if (!cleared) throw StateError('Device storage refused the erase.');
-      // 4. Reset in-memory state so the UI rebuilds empty immediately.
+      // 5. Reset in-memory state so the UI rebuilds empty immediately.
       _resetInMemoryState();
       _say('All local data erased.');
       await Future<void>.delayed(const Duration(milliseconds: 900));
@@ -570,10 +574,7 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Data Storage & Services',
-                style: AppTextStyles.body14Bold,
-              ),
+              Text('Data Storage & Services', style: AppTextStyles.body14Bold),
               line(
                 'Everything is kept on this device first, as plain app data '
                 '(not encrypted).',
@@ -659,9 +660,7 @@ class _HelpPageState extends State<HelpPage> {
             onToggle: () {
               SystemSound.play(SystemSoundType.click);
               HapticFeedback.selectionClick();
-              setState(
-                () => _openId = _openId == topic.id ? null : topic.id,
-              );
+              setState(() => _openId = _openId == topic.id ? null : topic.id);
             },
           ),
       ],
@@ -869,7 +868,9 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage> {
       // is not deployed yet. Any failure preserves the draft; only a
       // confirmed acceptance resets the form.
       final contact = _contact.text.trim().isEmpty ? null : _contact.text;
-      final result = await ref.read(feedbackSubmitterProvider).submit(
+      final result = await ref
+          .read(feedbackSubmitterProvider)
+          .submit(
             category: _category,
             subject: _subject.text,
             message: _message.text,

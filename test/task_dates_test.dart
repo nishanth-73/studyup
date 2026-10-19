@@ -128,6 +128,40 @@ void main() {
       expect(second.state.tasksByDate.containsKey('2023-05-17'), isTrue);
       second.dispose();
     });
+
+    test(
+      'a task added while persisted tasks are loading is retained',
+      () async {
+        final ctrl = HomeController();
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        ctrl.addTask(
+          title: 'Added during startup',
+          description: 'Keep both records',
+          startMinutes: 660,
+          endMinutes: 720,
+        );
+        await waitFor(() => ctrl.state.isLoaded);
+
+        ctrl.selectDate(today);
+        expect(ctrl.state.selectedTasks.single.title, 'Added during startup');
+        ctrl.selectDate(DateTime(2023, 5, 17));
+        expect(ctrl.state.selectedTasks.single.title, 'Old homework');
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        ctrl.dispose();
+
+        final restored = HomeController();
+        await waitFor(() => restored.state.isLoaded);
+        restored.selectDate(today);
+        expect(
+          restored.state.selectedTasks.single.title,
+          'Added during startup',
+        );
+        restored.selectDate(DateTime(2023, 5, 17));
+        expect(restored.state.selectedTasks.single.title, 'Old homework');
+        restored.dispose();
+      },
+    );
   });
 
   group('calendar correctness', () {

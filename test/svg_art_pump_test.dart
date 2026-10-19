@@ -70,7 +70,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const cases = [
-    ('assets/images/today_session.svg', 2.4),
+    ('assets/images/today_session.svg', 2.0),
     ('assets/images/session.svg', 2.4),
     ('assets/images/tasks.svg', 3.9),
     ('assets/images/onboarding_1.svg', 6.0),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -82,6 +83,29 @@ void main() {
       controller.dispose();
     });
 
+    test(
+      'direct concurrent starts are serialized and cannot duplicate',
+      () async {
+        final controller = StudyProgressController();
+        await _waitForLoad(controller);
+        final t0 = DateTime(2026, 6, 1, 10, 0, 0);
+
+        await expectLater(
+          Future.wait([
+            controller.startSession(checkInTime: t0),
+            controller.startSession(
+              checkInTime: t0.add(const Duration(seconds: 1)),
+            ),
+          ]),
+          throwsStateError,
+        );
+
+        expect(controller.state.sessions, hasLength(1));
+        expect(controller.state.activeSession!.checkInTime, t0);
+        controller.dispose();
+      },
+    );
+
     test('checkOut is a safe no-op with no session or when paused', () async {
       final controller = StudyProgressController();
       await _waitForLoad(controller);
@@ -118,6 +142,18 @@ void main() {
   });
 
   group('Session artwork follows check-in state', () {
+    const timerChannel = MethodChannel('studyup/study_timer');
+
+    setUp(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(timerChannel, (_) async => null);
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(timerChannel, null);
+    });
+
     String sessionJson(DateTime at) => jsonEncode([
       {
         'id': 's1',
@@ -137,6 +173,7 @@ void main() {
       final start = DateTime.now().subtract(const Duration(minutes: 5));
       SharedPreferences.setMockInitialValues({
         'studyup.studySessions.v1': sessionJson(start),
+        'studyup.notif.liveProgress.v1': false,
       });
       final container = ProviderContainer();
       addTearDown(container.dispose);

@@ -81,6 +81,7 @@ class HomeController extends StateNotifier<HomeDayState> {
   /// Set once starter tasks have been considered (seeded or skipped).
   /// Never reset: deleting the starters must not bring them back.
   static const _starterFlagKey = 'studyup.tasks.starterSeeded.v1';
+  Future<void> _writeQueue = Future<void>.value();
 
   static HomeDayState _seed() {
     final now = DateTime.now();
@@ -131,11 +132,24 @@ class HomeController extends StateNotifier<HomeDayState> {
             StudyTask.fromJson(Map<String, Object?>.from(entry! as Map)),
         ];
       });
+      var hasPendingTasks = false;
+      for (final entry in state.tasksByDate.entries) {
+        final saved = map.putIfAbsent(entry.key, () => []);
+        final savedIds = saved.map((task) => task.id).toSet();
+        final pending = entry.value.where(
+          (task) => !savedIds.contains(task.id),
+        );
+        if (pending.isNotEmpty) {
+          saved.addAll(pending);
+          hasPendingTasks = true;
+        }
+      }
       // Existing users keep their data untouched; just mark the starter
       // decision done so nothing is ever seeded on top of real tasks.
       if (!seeded) await prefs.setBool(_starterFlagKey, true);
       if (!mounted) return;
       state = state.copyWith(tasksByDate: map, isLoaded: true);
+      if (hasPendingTasks) await _persist();
       unawaited(_rescheduleAll());
     } catch (error, stackTrace) {
       FlutterError.reportError(
@@ -161,7 +175,12 @@ class HomeController extends StateNotifier<HomeDayState> {
     );
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_storageKey, encoded);
+      final write = _writeQueue.catchError((Object _) {}).then((_) async {
+        final saved = await prefs.setString(_storageKey, encoded);
+        if (!saved) throw StateError('Could not persist tasks.');
+      });
+      _writeQueue = write;
+      await write;
     } catch (error, stackTrace) {
       FlutterError.reportError(
         FlutterErrorDetails(

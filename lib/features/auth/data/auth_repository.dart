@@ -160,12 +160,7 @@ class AuthRepository {
   }
 
   Future<void> signOut() async {
-    try {
-      await _client.auth.signOut();
-    } catch (_) {
-      // Local session cleared best-effort; offline sign-out still works
-      // because supabase_flutter clears storage before the network call.
-    }
+    await _client.auth.signOut();
   }
 
   /// Ensures a public profile row exists for the current user (the DB

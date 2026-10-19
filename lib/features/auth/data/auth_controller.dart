@@ -86,6 +86,33 @@ final authSettledProvider = FutureProvider<bool>((ref) async {
   return true;
 });
 
+const localDataOwnerPreferenceKey = 'studyup.localDataOwnerUserId.v1';
+const _linkedUserPreferenceKey = 'studyup.linkedUserId.v1';
+
+/// Allows one Supabase account to use the local study data on this device.
+/// The owner is permanent until the user explicitly erases local data.
+/// The older one-shot link key is used as the owner during migration.
+final localAccountDataAccessProvider = FutureProvider.family<bool, String>((
+  _,
+  userId,
+) async {
+  if (userId.isEmpty) {
+    throw ArgumentError.value(userId, 'userId', 'Must not be empty.');
+  }
+  final prefs = await SharedPreferences.getInstance();
+  final owner = prefs.getString(localDataOwnerPreferenceKey);
+  final previousLink = prefs.getString(_linkedUserPreferenceKey);
+  final knownOwner = owner?.isNotEmpty == true ? owner : previousLink;
+  if (knownOwner != null && knownOwner != userId) return false;
+  if (owner == null || owner.isEmpty) {
+    final saved = await prefs.setString(localDataOwnerPreferenceKey, userId);
+    if (!saved) {
+      throw StateError('Could not protect this device’s local study data.');
+    }
+  }
+  return true;
+});
+
 /// Pending invitation token stashed before sign-in (peeked, not
 /// consumed — the screen that handles it calls takePending). Auto-dispose
 /// so a consumed/cancelled token is never replayed from the cache on a
@@ -101,8 +128,9 @@ final pendingInviteProvider = FutureProvider.autoDispose<String?>((_) {
 final postSignInLinkProvider = FutureProvider<void>((ref) async {
   final userId = ref.watch(backendUserIdProvider);
   if (userId == null) return;
+  if (!await ref.watch(localAccountDataAccessProvider(userId).future)) return;
   final prefs = await SharedPreferences.getInstance();
-  if (prefs.getString('studyup.linkedUserId.v1') == userId) return;
+  if (prefs.getString(_linkedUserPreferenceKey) == userId) return;
   final repo = ref.watch(authRepositoryProvider);
   final profile = ref.watch(userProfileProvider).valueOrNull;
   if (repo != null && profile != null) {
@@ -119,12 +147,12 @@ final postSignInLinkProvider = FutureProvider<void>((ref) async {
     await SessionSyncService(SocialRemote(Supabase.instance.client))
         .syncAll(sessions);
   } catch (_) {}
-  await prefs.setString('studyup.linkedUserId.v1', userId);
+  await prefs.setString(_linkedUserPreferenceKey, userId);
 });
 
-/// Clears the per-account link marker (called on sign-out so the next
-/// account links and syncs fresh).
+/// Clears the one-shot sync marker on sign-out. The separate local-data
+/// owner marker intentionally survives sign-out to prevent account mixing.
 Future<void> clearPostSignInLink() async {
   final prefs = await SharedPreferences.getInstance();
-  await prefs.remove('studyup.linkedUserId.v1');
+  await prefs.remove(_linkedUserPreferenceKey);
 }

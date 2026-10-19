@@ -8,7 +8,7 @@ import 'dart:ui' show Path, Image;
 /// Supported subset (exactly what the files use — anything else throws
 /// [FormatException] at parse time so gaps fail loudly in tests):
 /// - elements: `g`, `path`, `rect`, `ellipse`, `circle`, `defs`
-///   (clipPath lookup), `clipPath`
+///   (clipPath lookup), `clipPath` path morphs
 /// - static transforms: `matrix()`, `translate()`, `scale()`, `rotate()`
 ///   (with optional center), composed in listed order
 /// - `display` gates (discrete), `opacity` tracks, path `d` morphs with
@@ -238,7 +238,15 @@ class SmilBrush {
 
 class SmilClip {
   final ParsedGeometry geometry;
-  const SmilClip(this.geometry);
+  final MorphTrack? morph;
+
+  const SmilClip(this.geometry, {this.morph});
+
+  ParsedGeometry geometryAt(double tSeconds, double loopSeconds) {
+    final track = morph;
+    if (track == null) return geometry;
+    return ParsedGeometry(track.commands, track.sample(tSeconds, loopSeconds));
+  }
 }
 
 /// An SVG `<mask>` subtree. Painted with dstIn blending over the masked
@@ -1165,7 +1173,7 @@ class _SmilParser {
     if (id == null || id.isEmpty) {
       throw const FormatException('clipPath without id');
     }
-    final parts = <ParsedGeometry>[];
+    final parts = <SmilClip>[];
     if (!tag.endsWith('/>')) {
       while (true) {
         _skipJunk();
@@ -1177,33 +1185,59 @@ class _SmilParser {
       }
     }
     if (parts.isEmpty) throw FormatException('Empty clipPath $id');
-    clips[id] = SmilClip(parts.first);
+    clips[id] = parts.first;
   }
 
-  ParsedGeometry _parseClipShape() {
+  SmilClip _parseClipShape() {
     if (_peekStartsWith('<rect')) {
-      final attrs = _parseAttrs(_readTag());
-      return _rectGeometry(attrs);
+      return SmilClip(_rectGeometry(_parseAttrs(_readTag())));
     }
     if (_peekStartsWith('<ellipse')) {
-      final attrs = _parseAttrs(_readTag());
-      return _ellipseGeometry(attrs);
+      return SmilClip(_ellipseGeometry(_parseAttrs(_readTag())));
     }
     if (_peekStartsWith('<circle')) {
       final attrs = _parseAttrs(_readTag());
       final cx = _attrNum(attrs, 'cx');
       final cy = _attrNum(attrs, 'cy');
       final r = _attrNum(attrs, 'r');
-      return ParsedGeometry(
-        const ['M', 'L', 'L', 'L', 'Z'],
-        [cx - r, cy - r, cx + r, cy - r, cx + r, cy + r, cx - r, cy + r],
+      return SmilClip(
+        ParsedGeometry(
+          const ['M', 'L', 'L', 'L', 'Z'],
+          [cx - r, cy - r, cx + r, cy - r, cx + r, cy + r, cx - r, cy + r],
+        ),
       );
     }
     if (_peekStartsWith('<path')) {
       final tag = _readTag();
-      final geometry = _absolutize(_parsePathData(_parseAttrs(tag)['d'] ?? ''));
-      if (!tag.endsWith('/>')) _expectClose('path');
-      return geometry;
+      final attrs = _parseAttrs(tag);
+      final geometry = _absolutize(_parsePathData(attrs['d'] ?? ''));
+      MorphTrack? morph;
+      if (!tag.endsWith('/>')) {
+        while (true) {
+          _skipJunk();
+          if (_peekStartsWith('</path>')) {
+            _readTag();
+            break;
+          }
+          if (!_peekStartsWith('<animate')) {
+            throw const FormatException(
+              'Unsupported element inside clipPath path',
+            );
+          }
+          _parseElementAnim(
+            onDisplay: (_, _, _) =>
+                throw const FormatException('Clip paths only support d morphs'),
+            onOpacity: (_, _, _, _) =>
+                throw const FormatException('Clip paths only support d morphs'),
+            onMorph: (values, keyTimes, splines, timing) {
+              morph = _parseMorph(values, keyTimes, splines, timing);
+            },
+            onUnexpected: (name) =>
+                throw FormatException('Unsupported clipPath animation: $name'),
+          );
+        }
+      }
+      return SmilClip(geometry, morph: morph);
     }
     throw FormatException('Unsupported clip shape at offset $pos');
   }

@@ -85,11 +85,12 @@ void main() {
 
     test('task record lights the dot once, edits never duplicate', () async {
       final service = NotificationService.instance;
-      final now = DateTime(2026, 10, 13, 8);
+      final today = DateTime.now();
+      final now = DateTime(today.year, today.month, today.day, 8);
       await service.recordCenterTask(
         taskId: 'a',
         title: 'Algebra',
-        date: DateTime(2026, 10, 13),
+        date: DateTime(now.year, now.month, now.day),
         startMinutes: 540,
         now: now,
       );
@@ -102,7 +103,7 @@ void main() {
       await service.recordCenterTask(
         taskId: 'a',
         title: 'Algebra II',
-        date: DateTime(2026, 10, 13),
+        date: DateTime(now.year, now.month, now.day),
         startMinutes: 600,
         now: now,
       );
@@ -114,18 +115,19 @@ void main() {
 
     test('removing a task row clears its unread contribution', () async {
       final service = NotificationService.instance;
-      final now = DateTime(2026, 10, 13, 8);
+      final today = DateTime.now();
+      final now = DateTime(today.year, today.month, today.day, 8);
       await service.recordCenterTask(
         taskId: 'a',
         title: 'A',
-        date: DateTime(2026, 10, 13),
+        date: DateTime(now.year, now.month, now.day),
         startMinutes: 540,
         now: now,
       );
       await service.recordCenterTask(
         taskId: 'b',
         title: 'B',
-        date: DateTime(2026, 10, 13),
+        date: DateTime(now.year, now.month, now.day),
         startMinutes: 600,
         now: now,
       );

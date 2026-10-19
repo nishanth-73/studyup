@@ -343,7 +343,9 @@ class SmilPainter extends CustomPainter {
           if (clip == null) {
             throw StateError('Unknown clipPath #$clipId');
           }
-          canvas.clipPath(buildGeometryPath(clip.geometry));
+          canvas.clipPath(
+            buildGeometryPath(clip.geometryAt(tSec, scene.loopSeconds)),
+          );
         }
         for (final child in children) {
           _paintNode(

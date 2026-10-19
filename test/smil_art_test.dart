@@ -68,17 +68,26 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('SMIL scene parsing', () {
-    test('today_session.svg: loop with gates + morphs + dash', () async {
+    test('today_session.svg: loop with animated clip paths', () async {
       final scene = await _load('assets/images/today_session.svg');
       expect(scene.width, 120);
       expect(scene.height, 120);
-      expect(scene.loopSeconds, closeTo(2.4, 0.001));
+      expect(scene.loopSeconds, closeTo(2.0, 0.001));
+      final animatedClips = scene.clips.values
+          .where((clip) => clip.morph != null)
+          .toList();
+      expect(animatedClips, hasLength(2));
+      for (final clip in animatedClips) {
+        expect(
+          clip.geometryAt(0, scene.loopSeconds).numbers,
+          isNot(equals(clip.geometryAt(1, scene.loopSeconds).numbers)),
+        );
+      }
       final counts = <String, int>{};
       for (final root in scene.roots) {
         _walkCounts(root, counts);
       }
-      expect(counts['gates'], 7);
-      expect(counts['morphs'], 3);
+      expect(counts['gates'], 8);
       expect(counts['leaves'], greaterThan(0));
     });
 

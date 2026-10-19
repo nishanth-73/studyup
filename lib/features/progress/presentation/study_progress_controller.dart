@@ -401,7 +401,9 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
         isLoaded: true,
       );
       _syncTicker();
-      await _finalizeStalePaused(DateTime.now());
+      await _enqueue(() async {
+        await _finalizeStalePaused(DateTime.now());
+      });
       if (!mounted) return;
       // Adopt any persisted running session into the live timer (restarts
       // the service after process death); re-post a paused session's
@@ -491,7 +493,10 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
   /// subject selection: every session is recorded under the shared daily
   /// identity so all charts, attendance, and statistics consume the same
   /// real data against the one daily goal.
-  Future<void> startSession({DateTime? checkInTime}) async {
+  Future<void> startSession({DateTime? checkInTime}) =>
+      _enqueue(() => _startSession(checkInTime: checkInTime));
+
+  Future<void> _startSession({DateTime? checkInTime}) async {
     if (!state.isLoaded) {
       throw StateError('Study data is still loading.');
     }
@@ -517,7 +522,10 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
 
   /// Freeze the active timer and persist banked seconds. The daily total
   /// keeps the saved progress; nothing resets to 0.
-  Future<void> pauseSession({DateTime? at}) async {
+  Future<void> pauseSession({DateTime? at}) =>
+      _enqueue(() => _pauseSession(at: at));
+
+  Future<void> _pauseSession({DateTime? at}) async {
     if (!state.isLoaded || state.error != null) {
       throw StateError('Study data is not ready.');
     }
@@ -562,7 +570,10 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
   }
 
   /// Resume a paused session from the exact banked elapsed value.
-  Future<void> resumeSession({DateTime? at}) async {
+  Future<void> resumeSession({DateTime? at}) =>
+      _enqueue(() => _resumeSession(at: at));
+
+  Future<void> _resumeSession({DateTime? at}) async {
     if (!state.isLoaded || state.error != null) {
       throw StateError('Study data is not ready.');
     }
@@ -620,10 +631,10 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
       final stamp = at ?? DateTime.now();
       final active = state.activeSession;
       if (active == null) {
-        await startSession(checkInTime: stamp);
+        await _startSession(checkInTime: stamp);
         await _pushLiveTimer(stamp, fresh: true);
       } else if (active.isPaused) {
-        await resumeSession(at: stamp);
+        await _resumeSession(at: stamp);
         await _pushLiveTimer(stamp, fresh: false);
       }
       // Already running: no-op.
@@ -643,7 +654,7 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
       final active = state.activeSession;
       if (active == null || active.isPaused) return;
       final stamp = at ?? DateTime.now();
-      await pauseSession(at: stamp);
+      await _pauseSession(at: stamp);
       final today = DateTime(stamp.year, stamp.month, stamp.day);
       var elapsed = 0;
       final end = stamp.isBefore(today)
@@ -706,7 +717,10 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
     }
   }
 
-  Future<void> endSession({DateTime? checkOutTime}) async {
+  Future<void> endSession({DateTime? checkOutTime}) =>
+      _enqueue(() => _endSession(checkOutTime: checkOutTime));
+
+  Future<void> _endSession({DateTime? checkOutTime}) async {
     if (!state.isLoaded || state.error != null) {
       throw StateError('Study data is not ready.');
     }
