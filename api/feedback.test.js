@@ -64,7 +64,12 @@ describe('feedback endpoint', () => {
 
   it('accepts valid POST and returns the Resend id (accepted, not delivered)', async () => {
     const { res } = await callHandler({
-      body: { category: 'bug', subject: 'Timer kept running', message: 'Step 1, step 2, it kept ticking.' },
+      body: {
+        category: 'bug',
+        subject: 'Timer kept running',
+        message: 'Step 1, step 2, it kept ticking.',
+        contactEmail: 'user@example.com',
+      },
       fetchImpl: okFetch,
     });
     assert.equal(res.statusCode, 200);
@@ -72,7 +77,7 @@ describe('feedback endpoint', () => {
     assert.equal(res.json.id, 'mock-resend-id');
   });
 
-  it('forwards optional contact email as reply_to, never as recipient', async () => {
+  it('forwards required contact email as reply_to, never as recipient', async () => {
     let sentBody = null;
     const capture = async (url, init) => {
       sentBody = JSON.parse(init.body);
@@ -115,6 +120,13 @@ describe('feedback endpoint', () => {
       fetchImpl: okFetch,
     });
     assert.equal(bad3.res.statusCode, 400);
+
+    const missingEmail = await callHandler({
+      body: { category: 'bug', subject: 'Valid subject here', message: 'A long enough message body here.' },
+      fetchImpl: okFetch,
+    });
+    assert.equal(missingEmail.res.statusCode, 400);
+    assert.match(missingEmail.res.json.error, /email is required/i);
   });
 
   it('rejects non-POST methods with 405 + Allow header', async () => {
@@ -125,7 +137,12 @@ describe('feedback endpoint', () => {
 
   it('returns non-sensitive 500 when env is missing (never leaks values)', async () => {
     const { res } = await callHandler({
-      body: { category: 'bug', subject: 'Valid subject here', message: 'A long enough message body here.' },
+      body: {
+        category: 'bug',
+        subject: 'Valid subject here',
+        message: 'A long enough message body here.',
+        contactEmail: 'user@example.com',
+      },
       fetchImpl: okFetch,
       env: { RESEND_API_KEY: '', FEEDBACK_TO_EMAIL: '', FEEDBACK_FROM_EMAIL: '' },
     });
@@ -137,7 +154,12 @@ describe('feedback endpoint', () => {
   it('maps Resend provider failure to 502 without leaking provider detail', async () => {
     const failing = async () => ({ ok: false, status: 403, json: async () => ({ message: 'secret-provider-reason' }) });
     const { res } = await callHandler({
-      body: { category: 'bug', subject: 'Valid subject here', message: 'A long enough message body here.' },
+      body: {
+        category: 'bug',
+        subject: 'Valid subject here',
+        message: 'A long enough message body here.',
+        contactEmail: 'user@example.com',
+      },
       fetchImpl: failing,
     });
     assert.equal(res.statusCode, 502);
@@ -145,7 +167,12 @@ describe('feedback endpoint', () => {
   });
 
   it('rate-limits floods with 429', async () => {
-    const payload = { category: 'other', subject: 'Valid subject here', message: 'A long enough message body here.' };
+    const payload = {
+      category: 'other',
+      subject: 'Valid subject here',
+      message: 'A long enough message body here.',
+      contactEmail: 'user@example.com',
+    };
     for (let i = 0; i < 5; i++) {
       const r = await callHandler({ body: payload, fetchImpl: okFetch, ip: '9.9.9.9' });
       assert.equal(r.res.statusCode, 200);

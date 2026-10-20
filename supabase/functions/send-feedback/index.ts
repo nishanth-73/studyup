@@ -8,7 +8,7 @@
 //   { category: "bug"|"feature"|"improvement"|"other",
 //     subject: string (3..120),
 //     message: string (10..2000),
-//     contactEmail?: string (optional, valid email, max 254),
+//     contactEmail: string (required, valid email, max 254),
 //     appVersion?: string (optional diagnostic, max 32),
 //     platform?: string (optional diagnostic, max 32) }
 // Response:
@@ -81,7 +81,7 @@ export interface ValidFeedback {
   category: string;
   subject: string;
   message: string;
-  contactEmail: string | null;
+  contactEmail: string;
   appVersion: string | null;
   platform: string | null;
 }
@@ -111,7 +111,10 @@ export function validateInput(body: unknown): { error: string } | { value: Valid
   if (rawMessage.length < MESSAGE_MIN || rawMessage.length > MESSAGE_MAX) {
     return { error: `Message must be ${MESSAGE_MIN}-${MESSAGE_MAX} characters.` };
   }
-  if (rawContact !== "" && !isValidEmail(rawContact)) {
+  if (rawContact === "") {
+    return { error: "Contact email is required." };
+  }
+  if (!isValidEmail(rawContact)) {
     return { error: "Contact email is not a valid email address." };
   }
   return {
@@ -119,7 +122,7 @@ export function validateInput(body: unknown): { error: string } | { value: Valid
       category: rawCategory,
       subject: rawSubject,
       message: rawMessage,
-      contactEmail: rawContact === "" ? null : rawContact,
+      contactEmail: rawContact,
       appVersion: rawVersion === "" ? null : rawVersion,
       platform: rawPlatform === "" ? null : rawPlatform,
     },

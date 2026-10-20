@@ -82,6 +82,20 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Home goal ring is enlarged and fits a narrow screen', (
+    tester,
+  ) async {
+    await pumpHome(tester);
+    tester.view.physicalSize = const Size(320, 640);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final ring = find.byKey(const ValueKey('home-today-goal-ring-container'));
+    expect(tester.getSize(ring), const Size(92, 92));
+    expect(find.byKey(const ValueKey('home-today-goal-ring')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('bell opens the in-app notification center', (tester) async {
     await pumpHome(tester);
     await tester.tap(find.bySemanticsLabel('Open notifications').first);
@@ -216,9 +230,7 @@ void main() {
       find.descendant(of: sheet, matching: find.text('1')).first,
     );
     await tester.pump();
-    await tester.tap(
-      find.descendant(of: sheet, matching: find.text('Done')),
-    );
+    await tester.tap(find.descendant(of: sheet, matching: find.text('Done')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     // Add sheet opened immediately for the future date.

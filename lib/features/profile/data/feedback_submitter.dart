@@ -38,10 +38,10 @@ class FeedbackSubmitter {
     String? httpEndpoint,
     SupabaseFeedbackFactory? edgeFactory,
     HttpFeedbackFactory? httpFactory,
-  })  : _httpEndpoint = httpEndpoint ?? hostedFeedbackEndpoint,
-        _edgeFactory = edgeFactory ?? SupabaseFeedbackService.new,
-        _httpFactory =
-            httpFactory ?? ((endpoint) => FeedbackService(endpoint: endpoint));
+  }) : _httpEndpoint = httpEndpoint ?? hostedFeedbackEndpoint,
+       _edgeFactory = edgeFactory ?? SupabaseFeedbackService.new,
+       _httpFactory =
+           httpFactory ?? ((endpoint) => FeedbackService(endpoint: endpoint));
 
   /// Visible for tests/diagnostics.
   String get httpEndpoint => _httpEndpoint;
@@ -50,7 +50,7 @@ class FeedbackSubmitter {
     required String category,
     required String subject,
     required String message,
-    String? contactEmail,
+    required String contactEmail,
     String? platform,
   }) async {
     if (supabaseLive) {

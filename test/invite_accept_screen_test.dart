@@ -210,10 +210,7 @@ void main() {
     await pumpScreen(tester, remote: remote, token: recoveredToken!);
 
     expect(remote.previewCalls, [shortToken]);
-    expect(
-      find.text('Maya invited you to join StudyUp.'),
-      findsOneWidget,
-    );
+    expect(find.text('Maya invited you to join StudyUp.'), findsOneWidget);
     expect(remote.acceptCalls, isEmpty);
   });
 
@@ -284,7 +281,10 @@ void main() {
     expect(find.text('Decline'), findsOneWidget);
     // Removed: the "Tip:"-style guidance and the "open the link / sign in /
     // tap Accept" explanation.
-    expect(find.textContaining('Nothing happens until you tap Accept'), findsNothing);
+    expect(
+      find.textContaining('Nothing happens until you tap Accept'),
+      findsNothing,
+    );
     expect(find.textContaining('Tip'), findsNothing);
     expect(find.textContaining('open the link'), findsNothing);
     expect(find.textContaining('friends open your link'), findsNothing);
@@ -375,10 +375,7 @@ void main() {
         // fully local/live and is merged without any server refresh.
         remoteFriendsBoardProvider(week).overrideWith((ref) {
           boardBuilds++;
-          return (
-            current: const <LeaderboardEntry>[],
-            previous: const <LeaderboardEntry>[],
-          );
+          return const <LeaderboardEntry>[];
         }),
       ],
     );

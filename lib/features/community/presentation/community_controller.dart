@@ -575,9 +575,9 @@ final leaderboardProvider = Provider.family<List<LeaderboardEntry>, DateTime>((
   return Leaderboard.rank(unordered: unordered, previousRanks: prevRanks);
 });
 
-/// Selected leaderboard week (Monday 00:00 local). Defaults to the
-/// current week; the Community screen moves it with the shared
-/// week-picker dialog. Never set to a future week by the UI.
+/// Community leaderboard week (Monday 00:00 local). Community always
+/// shows the current week; the value is refreshed on foreground resume so
+/// an app kept open across Monday rolls over to the new leaderboard.
 final communityWeekProvider = StateProvider<DateTime>(
   (ref) => mondayOf(DateTime.now()),
 );

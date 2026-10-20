@@ -40,9 +40,9 @@ String? validateFeedbackMessage(String value) {
 
 String? validateFeedbackContactEmail(String value) {
   final v = value.trim();
-  if (v.isEmpty) return null; // optional
+  if (v.isEmpty) return 'Enter your contact email.';
   if (v.length > 254 || !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$').hasMatch(v)) {
-    return 'Enter a valid email, or leave it empty.';
+    return 'Enter a valid email address.';
   }
   return null;
 }
@@ -89,7 +89,7 @@ class FeedbackService {
     required String category,
     required String subject,
     required String message,
-    String? contactEmail,
+    required String contactEmail,
   }) async {
     if (endpoint.isEmpty || !endpoint.startsWith('https://')) {
       throw const FeedbackException(
@@ -107,10 +107,10 @@ class FeedbackService {
     if (subjectError != null) throw FeedbackException(subjectError);
     final messageError = validateFeedbackMessage(message);
     if (messageError != null) throw FeedbackException(messageError);
-    final emailError = validateFeedbackContactEmail(contactEmail ?? '');
+    final emailError = validateFeedbackContactEmail(contactEmail);
     if (emailError != null) throw FeedbackException(emailError);
 
-    final contact = (contactEmail ?? '').trim();
+    final contact = contactEmail.trim();
 
     http.Response res;
     try {
@@ -122,7 +122,7 @@ class FeedbackService {
               'category': cat,
               'subject': subject.trim(),
               'message': message.trim(),
-              if (contact.isNotEmpty) 'contactEmail': contact,
+              'contactEmail': contact,
             }),
           )
           .timeout(timeout);

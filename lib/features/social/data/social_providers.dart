@@ -191,33 +191,20 @@ final communityDisplayProvider = FutureProvider.autoDispose
       return _localBoard(ref, weekStart);
     });
 
-/// Friends-only server rows for [weekStart] plus the week before, straight
-/// from the friends scope of [leaderboard_scope] (aggregates only). SELF
-/// IS NEVER RANKED FROM THIS FETCH: self is local and live, so this layer
-/// can stay cached while sessions tick and only refetches on explicit
-/// invalidation (friendship changes, sync completions, resume) or on the
-/// next Community visit (autoDispose).
+/// Friends-only server rows for [weekStart], straight from the friends
+/// scope of [leaderboard_scope] (aggregates only). SELF IS NEVER RANKED
+/// FROM THIS FETCH: self is local and live, so this layer only refetches on
+/// explicit invalidation (friendship changes, sync completions, resume) or
+/// on the next Community visit (autoDispose).
 final remoteFriendsBoardProvider = FutureProvider.autoDispose
-    .family<
-      ({List<LeaderboardEntry> current, List<LeaderboardEntry> previous}),
-      DateTime
-    >((ref, weekStart) async {
+    .family<List<LeaderboardEntry>, DateTime>((ref, weekStart) async {
       final remote = ref.watch(socialRemoteProvider)!;
       final selfId = ref.watch(backendUserIdProvider)!;
       final rows = await remote.leaderboard(weekStart: weekStart);
-      final prev = await remote.leaderboard(
-        weekStart: weekStart.subtract(const Duration(days: 7)),
-      );
-      return (
-        current: [
-          for (final r in rows)
-            if (r.userId != selfId) _friendEntry(r),
-        ],
-        previous: [
-          for (final r in prev)
-            if (r.userId != selfId && r.weekSeconds > 0) _friendEntry(r),
-        ],
-      );
+      return [
+        for (final r in rows)
+          if (r.userId != selfId) _friendEntry(r),
+      ];
     });
 
 LeaderboardEntry _friendEntry(RemoteBoardRow r) => LeaderboardEntry(
@@ -296,7 +283,7 @@ Future<List<LeaderboardEntry>> _remoteBoard(Ref ref, DateTime weekStart) async {
     now: now,
   );
   final withMembers = <LeaderboardEntry>[
-    for (final entry in base.current)
+    for (final entry in base)
       if (friendsById.containsKey(entry.memberId))
         LeaderboardEntry(
           memberId: entry.memberId,
@@ -311,44 +298,22 @@ Future<List<LeaderboardEntry>> _remoteBoard(Ref ref, DateTime weekStart) async {
           level: entry.level,
         ),
     for (final f in friends)
-      if (f.userId != selfId &&
-          !base.current.any((e) => e.memberId == f.userId))
+      if (f.userId != selfId && !base.any((e) => e.memberId == f.userId))
         _friendWithoutStats(f),
   ];
-  final prevStart = weekStart.subtract(const Duration(days: 7));
-  final prevRanked = Leaderboard.rank(
-    unordered: [...base.previous, selfFor(prevStart)],
-    previousRanks: const {},
-  );
-  final prevRanks = {
-    for (final e in prevRanked.where((e) => e.hasData)) e.memberId: e.rank,
-  };
   return Leaderboard.rank(
     unordered: [selfFor(weekStart), ...withMembers],
-    previousRanks: prevRanks,
+    previousRanks: const {},
   );
 }
 
 Future<List<LeaderboardEntry>> _localBoard(Ref ref, DateTime weekStart) async {
   final real = ref.watch(leaderboardProvider(weekStart));
-  final realPrev = ref.watch(
-    leaderboardProvider(weekStart.subtract(const Duration(days: 7))),
-  );
   final current = [
     ...real.map(_unranked),
     ...CommunityDemo.demoEntriesForWeek(weekStart),
   ];
-  final prev = [
-    ...realPrev.where((e) => e.hasData).map(_unranked),
-    ...CommunityDemo.demoEntriesForWeek(
-      weekStart.subtract(const Duration(days: 7)),
-    ),
-  ];
-  final prevRanked = Leaderboard.rank(unordered: prev, previousRanks: const {});
-  final prevRanks = {
-    for (final e in prevRanked.where((e) => e.hasData)) e.memberId: e.rank,
-  };
-  return Leaderboard.rank(unordered: current, previousRanks: prevRanks);
+  return Leaderboard.rank(unordered: current, previousRanks: const {});
 }
 
 /// Background trigger: uploads newly saved closed intervals whenever the

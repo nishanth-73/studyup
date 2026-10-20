@@ -19,7 +19,7 @@ import 'package:studyup/features/social/data/social_remote.dart';
 ///   local sessions (the same deduped-seconds/streak/XP-ledger math as the
 ///   Progress weekly card) — server self rows are ignored, so session
 ///   start/pause/resume/end show up immediately without any upload;
-/// - two weeks are fetched (current + previous) so rank movement works;
+/// - only the selected Monday-to-Monday week is fetched;
 /// - server rows carry aggregates only (no tasks, sessions, or emails);
 /// - friendship/request realtime events refresh the board and friends.
 class _FakeRemote extends SocialRemote {
@@ -49,6 +49,7 @@ class _FakeRemote extends SocialRemote {
   int upsertCalls = 0;
   void Function()? friendsChanged;
   void Function()? requestsChanged;
+  void Function()? progressChanged;
 
   // The session-sync service keys its "already uploaded" ledger by the
   // authenticated user id; a fake client has none, so supply the one the
@@ -100,6 +101,7 @@ class _FakeRemote extends SocialRemote {
     void Function() onChange, {
     void Function(RealtimeSubscribeStatus status, Object? error)? onStatus,
   }) {
+    progressChanged = onChange;
     onStatus?.call(RealtimeSubscribeStatus.subscribed, null);
     return client.channel('test-progress');
   }
@@ -120,7 +122,7 @@ ProviderContainer _container(_FakeRemote remote) => ProviderContainer(
 
 void main() {
   test(
-    'live board fetches current + previous week and maps ranked rows',
+    'newly accepted friend ranks using already-recorded current-week progress',
     () async {
       SharedPreferences.setMockInitialValues({});
       final week = mondayOf(DateTime.now());
@@ -190,8 +192,9 @@ void main() {
         communityDisplayProvider(week).future,
       );
 
-      // Current week first, then the previous week — both friends-only.
-      expect(remote.leaderboardWeeks, [week, prevWeek]);
+      // The previous week is not fetched; only the selected weekly window
+      // determines totals and rank.
+      expect(remote.leaderboardWeeks, [week]);
       // Friend 7200 (server) outranks self 0 (live local, no sessions yet);
       // the stale server self row is never merged.
       expect(entries.map((e) => e.memberId).toList(), ['f1', 'me']);
@@ -360,7 +363,7 @@ void main() {
       expect(stillEnded.weekSeconds, ended.weekSeconds);
       expect(remote.upsertCalls, 0);
       // Live self never refetches the friends board (still cached).
-      expect(remote.leaderboardWeeks.length, 2);
+      expect(remote.leaderboardWeeks.length, 1);
 
       boardSub.close();
       progressSub.close();
@@ -425,7 +428,6 @@ void main() {
           streakDays: 4,
         ),
       ];
-      remote.rowsByWeek[week.subtract(const Duration(days: 7))] = const [];
       final container = _container(remote);
       addTearDown(container.dispose);
 
@@ -434,7 +436,7 @@ void main() {
         (_, _) {},
       );
       await container.read(communityDisplayProvider(week).future);
-      expect(remote.leaderboardWeeks.length, 2);
+      expect(remote.leaderboardWeeks.length, 1);
 
       final friendsSub = container.listen(remoteFriendsProvider, (_, _) {});
       await container.read(remoteFriendsProvider.future);
@@ -444,10 +446,10 @@ void main() {
       expect(remote.friendsChanged, isNotNull);
       expect(remote.requestsChanged, isNotNull);
 
-      // A friendship appeared/disappeared → the board refetches both weeks.
+      // A friendship appeared/disappeared → the current-week board refetches.
       remote.friendsChanged!();
       await container.read(communityDisplayProvider(week).future);
-      expect(remote.leaderboardWeeks.length, 4);
+      expect(remote.leaderboardWeeks.length, 2);
 
       // A request arrived → the friends list refetches.
       remote.requestsChanged!();
@@ -484,7 +486,6 @@ void main() {
       final week = mondayOf(now);
       final remote = _FakeRemote();
       remote.rowsByWeek[week] = const [];
-      remote.rowsByWeek[week.subtract(const Duration(days: 7))] = const [];
       final container = _container(remote);
       addTearDown(container.dispose);
 
@@ -493,16 +494,16 @@ void main() {
         (_, _) {},
       );
       await container.read(communityDisplayProvider(week).future);
-      expect(remote.leaderboardWeeks.length, 2);
+      expect(remote.leaderboardWeeks.length, 1);
 
       // The signed-in sync trigger uploads the ended local session and must
       // refresh the board so the new numbers appear without a manual pull.
       container.listen(sessionSyncTriggerProvider, (_, _) {});
-      for (var i = 0; i < 200 && remote.leaderboardWeeks.length < 4; i++) {
+      for (var i = 0; i < 200 && remote.leaderboardWeeks.length < 2; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
       expect(remote.upsertCalls, 1);
-      expect(remote.leaderboardWeeks.length, greaterThanOrEqualTo(4));
+      expect(remote.leaderboardWeeks.length, greaterThanOrEqualTo(2));
 
       boardSub.close();
     },
@@ -603,12 +604,50 @@ void main() {
   );
 
   test(
-    'a friend who later studies gets real statistics, replacing zeros',
+    'newly accepted friend ranks from existing current-week history',
     () async {
       SharedPreferences.setMockInitialValues({});
       final week = mondayOf(DateTime.now());
       final prevWeek = week.subtract(const Duration(days: 7));
       final remote = _FakeRemote();
+      remote.rowsByWeek[week] = const [
+        RemoteBoardRow(
+          userId: 'brother',
+          displayName: 'Brother',
+          avatarId: 'robo-brother',
+          blobVariant: 0,
+          weekSeconds: 5400,
+          activeDays: 2,
+          totalSeconds: 90000,
+          streakDays: 3,
+        ),
+      ];
+      remote.rowsByWeek[prevWeek] = const [
+        RemoteBoardRow(
+          userId: 'brother',
+          displayName: 'Brother',
+          avatarId: 'robo-brother',
+          blobVariant: 0,
+          weekSeconds: 500000,
+          activeDays: 7,
+          totalSeconds: 500000,
+          streakDays: 3,
+        ),
+      ];
+      final container = _container(remote);
+      addTearDown(container.dispose);
+      await waitForLoaded(container);
+
+      var entries = await container.read(communityDisplayProvider(week).future);
+      expect(
+        entries.where((e) => e.memberId == 'brother'),
+        isEmpty,
+        reason: 'not friends yet',
+      );
+      expect(remote.leaderboardWeeks, [week]);
+
+      // The friend accepts after studying. The backend returns the existing
+      // current-week aggregate; friendship time does not reset its window.
       remote.friends = const [
         RemoteFriend(
           userId: 'brother',
@@ -618,45 +657,66 @@ void main() {
           leaderboardOptIn: true,
         ),
       ];
-      // First week: server has no row yet (zero progress).
-      remote.rowsByWeek[week] = const [];
-      remote.rowsByWeek[prevWeek] = const [];
-      final container = _container(remote);
-      addTearDown(container.dispose);
-      await waitForLoaded(container);
+      container.listen(remoteRealtimeProvider, (_, _) {});
+      remote.friendsChanged?.call();
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      entries = await container.read(communityDisplayProvider(week).future);
+      final brother = entries.singleWhere((e) => e.memberId == 'brother');
+      expect(brother.hasData, isTrue);
+      expect(brother.weekSeconds, 5400);
+      expect(brother.rank, 1);
+      expect(remote.leaderboardWeeks, [week, week]);
+      expect(remote.leaderboardWeeks, everyElement(week));
+    },
+  );
 
-      var entries = await container.read(communityDisplayProvider(week).future);
-      expect(
-        entries.firstWhere((e) => e.memberId == 'brother').hasData,
-        isTrue,
-      );
-
-      // After real sessions sync up, the server row carries real totals and
-      // the membership placeholder is replaced (never duplicated).
-      remote.rowsByWeek[week] = const [
-        RemoteBoardRow(
+  test('progress realtime event refreshes another friend aggregate', () async {
+    SharedPreferences.setMockInitialValues({});
+    final week = mondayOf(DateTime.now());
+    final remote = _FakeRemote()
+      ..friends = const [
+        RemoteFriend(
           userId: 'brother',
           displayName: 'Brother',
           avatarId: 'robo-brother',
           blobVariant: 0,
-          weekSeconds: 5400,
-          activeDays: 2,
-          totalSeconds: 5400,
-          streakDays: 3,
+          leaderboardOptIn: true,
         ),
       ];
-      container.invalidate(remoteFriendsBoardProvider);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+    remote.rowsByWeek[week] = const [];
+    final container = _container(remote);
+    addTearDown(container.dispose);
+    await waitForLoaded(container);
+    container.listen(remoteRealtimeProvider, (_, _) {});
+    final boardSub = container.listen(
+      communityDisplayProvider(week),
+      (_, _) {},
+    );
+    await container.read(communityDisplayProvider(week).future);
+    expect(remote.leaderboardWeeks, [week]);
 
-      entries = await container.read(communityDisplayProvider(week).future);
-      final brother = entries.where((e) => e.memberId == 'brother').toList();
-      expect(brother, hasLength(1), reason: 'no duplicate rows');
-      expect(brother.single.hasData, isTrue);
-      expect(brother.single.weekSeconds, 5400);
-      expect(brother.single.streakDays, 3);
-      expect(brother.single.rank, greaterThan(0));
-    },
-  );
+    remote.rowsByWeek[week] = const [
+      RemoteBoardRow(
+        userId: 'brother',
+        displayName: 'Brother',
+        avatarId: 'robo-brother',
+        blobVariant: 0,
+        weekSeconds: 3600,
+        activeDays: 1,
+        totalSeconds: 3600,
+        streakDays: 1,
+      ),
+    ];
+    remote.progressChanged?.call();
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    final updated = await container.read(communityDisplayProvider(week).future);
+    expect(
+      updated.singleWhere((e) => e.memberId == 'brother').weekSeconds,
+      3600,
+    );
+    expect(remote.leaderboardWeeks, [week, week]);
+    boardSub.close();
+  });
 
   test(
     'fewer than three friends and zero progress rank without errors',

@@ -18,7 +18,8 @@ Nothing here is auto-run by CI; record the results before release.
 --   supabase/migrations/20261104_hardening_fix.sql
 --   supabase/migrations/20261112_friends_zero_progress.sql
 --   supabase/migrations/20261113_community_progress_realtime.sql
--- Both are re-runnable (IF NOT EXISTS / OR REPLACE / policy drops).
+--   supabase/migrations/20261114_community_weekly_dedup.sql
+-- Apply each migration once and in order; do not skip prior migrations.
 ```
 
 ## 1. Profile auto-creation trigger
@@ -102,7 +103,22 @@ select * from leaderboard_scope('friends', date_trunc('week', now()), date_trunc
 -- scope='bogus' → ERROR "bad scope".
 ```
 
-## 8. Session-day validation
+## 8. Historical current-week progress and boundary handling
+
+```sql
+-- As USER_A, insert one session with overlapping intervals in the current
+-- Monday-to-Monday window and one interval in the prior week. Before
+-- USER_A and USER_B become friends, those rows remain private.
+-- After USER_B accepts USER_A's invitation, call the friends RPC as USER_B
+-- with p_start = the viewer's local Monday midnight converted to UTC and
+-- p_end = the following Monday midnight converted to UTC.
+-- Expect USER_A's week_seconds to include the union of eligible current-
+-- week intervals only: overlaps count once and the prior-week interval is
+-- excluded. Repeating the call returns the same total. Only aggregate and
+-- profile fields are returned, never raw segments.
+```
+
+## 9. Session-day validation
 
 ```sql
 -- Insert a session as USER_A, then session_days rows whose seconds do
@@ -117,7 +133,7 @@ select * from leaderboard_scope('friends', date_trunc('week', now()), date_trunc
 -- USER_A opted in. Raw study_sessions remain owner-only.
 ```
 
-## 9. Realtime publication and event visibility
+## 10. Realtime publication and event visibility
 
 ```sql
 select tablename from pg_publication_tables where pubname = 'supabase_realtime';
@@ -134,7 +150,7 @@ select user_id from community_progress_events where user_id = 'USER_A';
 -- Expect: zero rows. As anon, select from community_progress_events fails.
 ```
 
-## 10. Cleanup
+## 11. Cleanup
 
 ```sql
 -- Delete test invitations/requests created above; keep real user rows.

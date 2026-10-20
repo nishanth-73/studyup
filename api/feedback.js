@@ -15,7 +15,7 @@
 //   { category: "bug"|"feature"|"improvement"|"other",
 //     subject: string (3..120),
 //     message: string (10..2000),
-//     contactEmail?: string (optional, valid email, max 254) }
+//     contactEmail: string (required, valid email, max 254) }
 // Response:
 //   200 { ok: true, id: "<resend-id>" }  -> accepted by Resend (NOT confirmed delivery)
 //   4xx/5xx { ok: false, error: "<non-sensitive message>" }
@@ -190,7 +190,10 @@ function validateInput(body) {
   if (rawMessage.length < MESSAGE_MIN || rawMessage.length > MESSAGE_MAX) {
     return { error: `Message must be ${MESSAGE_MIN}-${MESSAGE_MAX} characters.` };
   }
-  if (rawContact !== '' && !isValidEmail(rawContact)) {
+  if (rawContact === '') {
+    return { error: 'Contact email is required.' };
+  }
+  if (!isValidEmail(rawContact)) {
     return { error: 'Contact email is not a valid email address.' };
   }
   return {
@@ -198,7 +201,7 @@ function validateInput(body) {
       category: rawCategory,
       subject: rawSubject,
       message: rawMessage,
-      contactEmail: rawContact === '' ? null : rawContact,
+      contactEmail: rawContact,
     },
   };
 }
@@ -301,12 +304,12 @@ async function handler(req, res, opts = {}) {
   const emailSubject = `[StudyUp Feedback: ${category}] ${subject}`.slice(0, 160);
   const text =
     `Category: ${category}\n` +
-    (contactEmail ? `Contact: ${contactEmail}\n` : 'Contact: (not provided)\n') +
+    `Contact: ${contactEmail}\n` +
     `Subject: ${subject}\n\n${message}\n`;
   const html =
     `<h2>StudyUp feedback — ${escapeHtml(category)}</h2>` +
     `<p><strong>Subject:</strong> ${escapeHtml(subject)}<br/>` +
-    `<strong>Contact:</strong> ${contactEmail ? escapeHtml(contactEmail) : '(not provided)'}</p>` +
+    `<strong>Contact:</strong> ${escapeHtml(contactEmail)}</p>` +
     `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(message)}</pre>`;
 
   try {

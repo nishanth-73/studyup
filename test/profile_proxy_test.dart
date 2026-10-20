@@ -174,6 +174,10 @@ void main() {
         find.byType(TextField).at(1),
         'The timer kept running after pause.',
       );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'you@example.com'),
+        'user@example.com',
+      );
       await tester.tap(find.text('Send feedback'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));

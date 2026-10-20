@@ -10,8 +10,6 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_shell.dart';
 import '../../../core/widgets/ui_kit.dart';
-import '../../../core/widgets/week_picker_dialog.dart';
-import '../../progress/presentation/study_progress_controller.dart';
 import '../../social/data/social_providers.dart';
 import '../../social/data/social_remote.dart';
 import '../data/community_demo.dart';
@@ -25,8 +23,8 @@ const _podiumFirst = AppColors.green; // #8BC48A
 const _podiumSecond = Color(0xFFFFA45B);
 const _podiumThird = Color(0xFF72A7F7);
 
-/// Community: a friendly study competition. Exactly five elements: week
-/// selector (shared Progress-style picker), top-three podium, You vs.
+/// Community: a friendly study competition. Exactly five elements: current
+/// week label, top-three podium, You vs.
 /// Top Friend comparison, full friends leaderboard, and the Invite
 /// button.
 ///
@@ -103,12 +101,6 @@ class CommunityScreen extends ConsumerWidget {
           ],
         ),
       ),
-      const SizedBox(width: 12),
-      _IconButton(
-        icon: Icons.calendar_month,
-        label: 'Pick a week',
-        onTap: () => _openWeekPicker(context, ref),
-      ),
     ],
   );
 
@@ -159,8 +151,8 @@ class CommunityScreen extends ConsumerWidget {
     final live = ref.watch(socialLiveProvider);
     final backendOn = ref.watch(backendReadyProvider);
     final sync = ref.watch(syncStatusProvider);
-    // Keep the leaderboard fresh: manual retry (errors above), week
-    // changes (provider family), friend changes (realtime), and resume.
+    // Keep the current-week leaderboard fresh on friend changes, retries,
+    // and app resume.
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
       children: [
@@ -263,58 +255,23 @@ class CommunityScreen extends ConsumerWidget {
     );
   }
 
-  // ---------- 1. selected-week caption (picker lives in the header) ----------
+  // ---------- 1. current-week caption ----------
 
-  /// Static one-line label showing the selected week + date range. It is
-  /// intentionally NOT tappable: week picking happens through the
-  /// calendar button in the header, which opens the shared
-  /// week-picker dialog (month stepper, per-week real totals, future
-  /// weeks locked). The picked week refreshes podium, comparison, and
-  /// every leaderboard row together.
+  /// Makes the Monday-through-Sunday period visible on the board.
   Widget _weekCaption(DateTime weekStart) {
     final now = DateTime.now();
-    final currentMonday = mondayOf(now);
-    String label;
-    if (!weekStart.isBefore(currentMonday)) {
-      label = 'This Week';
-    } else if (weekStart == currentMonday.subtract(const Duration(days: 7))) {
-      label = 'Last Week';
-    } else {
-      label = 'Week';
-    }
     var range = weekRangeLabel(weekStart);
     if (weekStart.year != now.year) range = '$range, ${weekStart.year}';
     return Padding(
       padding: const EdgeInsets.only(top: 2),
       child: Text(
-        '$label · $range',
+        'Current week · Mon–Sun · $range',
         style: AppTextStyles.secondary12,
         textAlign: TextAlign.center,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
     );
-  }
-
-  Future<void> _openWeekPicker(BuildContext context, WidgetRef ref) async {
-    final sessions = ref.read(studyProgressProvider).sessions;
-    final now = DateTime.now();
-    final picked = await showWeekPickerDialog(
-      context: context,
-      title: 'Select week',
-      initialMonday: ref.read(communityWeekProvider),
-      minutesFor: (monday) =>
-          studiedSecondsInRange(
-            sessions,
-            monday,
-            monday.add(const Duration(days: 7)),
-            now,
-          ) ~/
-          60,
-    );
-    if (picked == null) return;
-    // The dialog only returns Monday 00:00 starts, never future weeks.
-    ref.read(communityWeekProvider.notifier).state = mondayOf(picked);
   }
 
   // ---------- 2. podium ----------
@@ -404,12 +361,6 @@ class CommunityScreen extends ConsumerWidget {
             color: place == 1 ? _podiumFirst : AppColors.textPrimary,
           ),
         ),
-        Text(
-          _streakLevelLine(entry),
-          style: AppTextStyles.secondary12,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
         if (isDemo) Text('DEMO', style: AppTextStyles.label10),
         const SizedBox(height: 6),
         Container(
@@ -429,12 +380,6 @@ class CommunityScreen extends ConsumerWidget {
         ),
       ],
     );
-  }
-
-  String _streakLevelLine(LeaderboardEntry e) {
-    final streak = e.streakDays == null ? '–' : '${e.streakDays}d streak';
-    final level = e.level == null ? '–' : 'Lv ${e.level}';
-    return '$streak · $level';
   }
 
   // ---------- 3. comparison ----------
@@ -506,20 +451,6 @@ class CommunityScreen extends ConsumerWidget {
             formatHoursMinutes(self.weekSeconds),
             formatHoursMinutes(friend.weekSeconds),
             self.weekSeconds >= friend.weekSeconds,
-          ),
-          _versusRow(
-            'Streak',
-            self.streakDays == null ? '–' : '${self.streakDays}d',
-            friend.streakDays == null ? '–' : '${friend.streakDays}d',
-            (self.streakDays ?? -1) >= (friend.streakDays ?? -1),
-            comparable: self.streakDays != null && friend.streakDays != null,
-          ),
-          _versusRow(
-            'Level',
-            self.level == null ? '–' : 'Lv ${self.level}',
-            friend.level == null ? '–' : 'Lv ${friend.level}',
-            (self.level ?? -1) >= (friend.level ?? -1),
-            comparable: self.level != null && friend.level != null,
           ),
           if (CommunityDemo.isDemoId(friend.memberId))
             Padding(
@@ -681,16 +612,9 @@ class CommunityScreen extends ConsumerWidget {
                     ],
                   ],
                 ),
-                Text(
-                  _streakLevelLine(e),
-                  style: AppTextStyles.secondary12,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
               ],
             ),
           ),
-          RankMovement(movement: e.rankMovement),
           const SizedBox(width: 8),
           Text(
             formatHoursMinutes(e.weekSeconds),
@@ -803,6 +727,10 @@ class _ResumeRefreshState extends ConsumerState<_ResumeRefresh>
   /// no shared data) and the server board rows (progress). Self is always
   /// computed locally and needs no refetch.
   void _refresh() {
+    final currentWeek = mondayOf(DateTime.now());
+    if (ref.read(communityWeekProvider) != currentWeek) {
+      ref.read(communityWeekProvider.notifier).state = currentWeek;
+    }
     ref.invalidate(remoteFriendsProvider);
     ref.invalidate(remoteFriendsBoardProvider);
   }
@@ -829,46 +757,4 @@ class _ResumeRefreshState extends ConsumerState<_ResumeRefresh>
 
   @override
   Widget build(BuildContext context) => widget.child;
-}
-
-/// Small circular icon button for the header.
-class _IconButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-
-  const _IconButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: label,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap == null
-            ? null
-            : () {
-                HapticFeedback.selectionClick();
-                onTap!();
-              },
-        child: Opacity(
-          opacity: onTap == null ? 0.35 : 1,
-          child: Container(
-            width: 44,
-            height: 44,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.surface,
-            ),
-            child: Icon(icon, color: AppColors.textPrimary, size: 22),
-          ),
-        ),
-      ),
-    );
-  }
 }

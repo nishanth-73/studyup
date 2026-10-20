@@ -299,15 +299,17 @@ class _GoalContent extends StatelessWidget {
         ),
         const SizedBox(width: 16),
         SizedBox(
-          width: 62,
-          height: 62,
+          key: const ValueKey('home-today-goal-ring-container'),
+          width: 92,
+          height: 92,
           child: Stack(
             alignment: Alignment.center,
             children: [
               SizedBox(
-                width: 62,
-                height: 62,
+                width: 92,
+                height: 92,
                 child: CircularProgressIndicator(
+                  key: const ValueKey('home-today-goal-ring'),
                   value: ringValue,
                   strokeWidth: 7,
                   backgroundColor: Colors.white38,

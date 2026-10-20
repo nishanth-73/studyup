@@ -8,8 +8,9 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../avatar/data/user_profile.dart';
 import '../../avatar/presentation/avatar_widgets.dart';
 import '../../avatar/presentation/user_profile_controller.dart';
+import '../../progress/data/study_gamification.dart';
+import '../../progress/presentation/study_progress_controller.dart';
 import '../../progress/presentation/streak_level_summary.dart';
-import '../../subjects/presentation/subjects_controller.dart';
 import 'profile_detail_pages.dart';
 
 /// Profile is a pushed standalone page (no bottom navigation): it always
@@ -20,10 +21,12 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(userProfileProvider).valueOrNull;
-    final subjects = ref
-        .watch(subjectsProvider)
-        .where((subject) => !subject.archived)
-        .length;
+    final progress = ref.watch(studyProgressProvider);
+    final levelName = progress.error != null
+        ? 'Level unavailable'
+        : !progress.isLoaded
+        ? 'Loading level…'
+        : computeStudyLevel(progress.xp.totalXp).tier.name;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -96,8 +99,11 @@ class ProfileScreen extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                         Text(
-                          '$subjects subjects',
+                          levelName,
+                          key: const ValueKey('profile-level-name'),
                           style: AppTextStyles.caption13,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
@@ -198,4 +204,3 @@ class _SetupProfileTile extends StatelessWidget {
     );
   }
 }
-

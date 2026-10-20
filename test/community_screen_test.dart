@@ -10,7 +10,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:studyup/core/backend/supabase_config.dart';
 import 'package:studyup/features/auth/data/auth_controller.dart';
 import 'package:studyup/features/community/data/community_store.dart';
-import 'package:studyup/features/community/presentation/community_controller.dart';
 import 'package:studyup/features/community/presentation/community_screen.dart';
 import 'package:studyup/features/social/data/social_providers.dart';
 import 'package:studyup/features/social/data/social_remote.dart';
@@ -197,8 +196,8 @@ class _ZeroProgressRemote extends _BoardRemote {
 ///    `type '(StudyRoom) => bool' of 'test'` — an untyped `data`
 ///    parameter once sent a dynamic predicate into `List.where`.
 ///    Every helper below takes typed `CommunityData`/model arguments.
-/// 2. The redesigned five-element screen: header, week selector, podium,
-///    comparison, leaderboard, invite.
+/// 2. The weekly screen: header, current-week caption, podium, comparison,
+///    leaderboard, invite.
 void main() {
   Map<String, Object?> profileDoc() => {
     'ownerId': 'local',
@@ -268,7 +267,7 @@ void main() {
     await pumpCommunity(tester);
     expect(find.text('Community'), findsOneWidget);
     expect(find.text('Grow together, win together.'), findsOneWidget);
-    expect(find.textContaining('This Week'), findsOneWidget);
+    expect(find.textContaining('Current week · Mon–Sun'), findsOneWidget);
     expect(find.text('Top 3'), findsOneWidget);
     expect(find.text('You vs. Top Friend'), findsOneWidget);
     await tester.scrollUntilVisible(
@@ -373,46 +372,13 @@ void main() {
     expect(find.text('DEMO'), findsWidgets);
   });
 
-  testWidgets('opens the shared week picker from the header button', (
+  testWidgets('shows the current Monday-to-Sunday period without a picker', (
     tester,
   ) async {
     await pumpCommunity(tester);
-    // Only the header calendar button opens the week picker now (the old
-    // selector card is gone); dialog has month stepper, locked future.
-    await tester.tap(find.byIcon(Icons.calendar_month));
-    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('Select week'), findsOneWidget);
-    expect(find.text('Cancel'), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-    expect(find.textContaining('This Week'), findsOneWidget);
-  });
-
-  testWidgets('shows a historical week with its own label', (tester) async {
-    final lastMonday = mondayOf(DateTime.now())
-        .subtract(const Duration(days: 7));
-    SharedPreferences.setMockInitialValues({
-      'studyup.userProfile.v1': jsonEncode(profileDoc()),
-      CommunityStore.storageKey: jsonEncode(const <String, Object?>{}),
-      'studyup.studySessions.v1': jsonEncode(const []),
-    });
-    final router = GoRouter(
-      initialLocation: '/community',
-      routes: [
-        GoRoute(path: '/community', builder: (_, _) => const CommunityScreen()),
-      ],
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [communityWeekProvider.overrideWith((ref) => lastMonday)],
-        child: MaterialApp.router(routerConfig: router),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-    expect(find.textContaining('Last Week'), findsOneWidget);
+    expect(find.textContaining('Current week · Mon–Sun'), findsOneWidget);
+    expect(find.byIcon(Icons.calendar_month), findsNothing);
   });
 
   testWidgets('offline invite button does not share the encoded payload', (

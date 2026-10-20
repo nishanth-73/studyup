@@ -51,6 +51,7 @@ void main() {
       category: 'bug',
       subject: 'ok subject',
       message: 'long enough message here',
+      contactEmail: 'user@example.com',
     );
     expect(result.resendId, 'edge-id');
     expect(httpCalls, 0);
@@ -106,6 +107,7 @@ void main() {
         category: 'bug',
         subject: 'ok subject',
         message: 'long enough message here',
+        contactEmail: 'user@example.com',
       );
       fail('expected throw');
     } on FeedbackException catch (e) {
@@ -126,6 +128,7 @@ void main() {
         category: 'bug',
         subject: 'ok subject',
         message: 'long enough message here',
+        contactEmail: 'user@example.com',
       );
       fail('expected throw');
     } on FeedbackException catch (e) {
@@ -149,6 +152,7 @@ void main() {
       category: 'bug',
       subject: 'ok subject',
       message: 'long enough message here',
+      contactEmail: 'user@example.com',
     );
     expect(result.resendId, isNull);
   });
@@ -160,6 +164,7 @@ void main() {
         category: 'bug',
         subject: 'ok subject',
         message: 'long enough message here',
+        contactEmail: 'user@example.com',
       ),
       throwsA(
         predicate<FeedbackException>((e) => e.message.contains('not set up')),

@@ -736,7 +736,7 @@ class _HelpTopicCard extends StatelessWidget {
 /// the support inbox.
 ///
 /// Behaviour:
-/// - validates category / subject / message / optional contact email first;
+/// - validates category / subject / message / required contact email first;
 /// - shows a loading state and ignores duplicate taps while submitting;
 /// - on backend acceptance: clears the form + draft, shows confirmation;
 /// - on any failure: keeps the draft (memory + device) so the user can retry.
@@ -859,7 +859,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage> {
       // Function first, then the hosted Vercel endpoint when the function
       // is not deployed yet. Any failure preserves the draft; only a
       // confirmed acceptance resets the form.
-      final contact = _contact.text.trim().isEmpty ? null : _contact.text;
+      final contact = _contact.text.trim();
       final result = await ref
           .read(feedbackSubmitterProvider)
           .submit(
@@ -1000,8 +1000,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage> {
               const SizedBox(height: 10),
               AppTextField(
                 controller: _contact,
-                label: 'Contact email (optional)',
-                hintText: 'you@example.com — only for replies',
+                label: 'Contact email (required)',
+                hintText: 'you@example.com',
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.done,
                 errorText: _contactError,

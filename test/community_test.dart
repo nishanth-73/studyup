@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:studyup/features/community/data/community_models.dart';
+import 'package:studyup/features/community/presentation/community_controller.dart';
 import 'package:studyup/features/progress/data/study_gamification.dart';
+import 'package:studyup/features/progress/data/study_session.dart';
 
 LeaderboardEntry _entry(
   String id, {
@@ -25,6 +27,54 @@ void main() {
       final monday = DateTime(2026, 10, 12); // a Monday
       expect(mondayOf(monday), DateTime(2026, 10, 12));
       expect(weekKeyFor(monday), '2026-10-12');
+    });
+
+    test('weekly seconds clip Monday-to-Monday and merge overlap', () {
+      StudySession session(String id, DateTime start, DateTime end) =>
+          StudySession(
+            id: id,
+            subjectId: 'general',
+            subjectName: 'Daily Study',
+            checkInTime: start,
+            checkOutTime: end,
+            pausedSeconds: end.difference(start).inSeconds,
+            studySegments: [StudyTimeSegment(startTime: start, endTime: end)],
+          );
+
+      final weekStart = DateTime(2026, 10, 12);
+      final sessions = [
+        session(
+          'cross-in',
+          DateTime(2026, 10, 11, 23, 30),
+          DateTime(2026, 10, 12, 0, 30),
+        ),
+        session('first', DateTime(2026, 10, 12, 9), DateTime(2026, 10, 12, 10)),
+        session(
+          'overlap',
+          DateTime(2026, 10, 12, 9, 30),
+          DateTime(2026, 10, 12, 10, 30),
+        ),
+        session(
+          'cross-out',
+          DateTime(2026, 10, 18, 23, 30),
+          DateTime(2026, 10, 19, 0, 30),
+        ),
+        session(
+          'outside',
+          DateTime(2026, 10, 11, 20),
+          DateTime(2026, 10, 11, 21),
+        ),
+      ];
+
+      expect(
+        studiedSecondsInRange(
+          sessions,
+          weekStart,
+          weekStart.add(const Duration(days: 7)),
+          DateTime(2026, 10, 20),
+        ),
+        9000,
+      );
     });
 
     test('Sunday belongs to the Monday-start week', () {

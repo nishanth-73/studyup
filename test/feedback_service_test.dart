@@ -21,9 +21,9 @@ void main() {
       expect(validateFeedbackMessage('x' * 2001), isNotNull);
     });
 
-    test('contact email optional but validated', () {
-      expect(validateFeedbackContactEmail(''), isNull);
-      expect(validateFeedbackContactEmail('  '), isNull);
+    test('contact email required and validated', () {
+      expect(validateFeedbackContactEmail(''), isNotNull);
+      expect(validateFeedbackContactEmail('  '), isNotNull);
       expect(validateFeedbackContactEmail('user@example.com'), isNull);
       expect(validateFeedbackContactEmail('not-an-email'), isNotNull);
     });
@@ -40,10 +40,7 @@ void main() {
 
     test('appends /api/feedback to base URL', () {
       FeedbackConfig.debugSetFileBaseForTest('https://demo.vercel.app');
-      expect(
-        FeedbackConfig.endpoint,
-        'https://demo.vercel.app/api/feedback',
-      );
+      expect(FeedbackConfig.endpoint, 'https://demo.vercel.app/api/feedback');
       expect(FeedbackConfig.isConfigured, isTrue);
     });
 
@@ -51,10 +48,7 @@ void main() {
       FeedbackConfig.debugSetFileBaseForTest(
         'https://demo.vercel.app/api/feedback',
       );
-      expect(
-        FeedbackConfig.endpoint,
-        'https://demo.vercel.app/api/feedback',
-      );
+      expect(FeedbackConfig.endpoint, 'https://demo.vercel.app/api/feedback');
       FeedbackConfig.debugSetFileBaseForTest('http://demo.vercel.app');
       expect(FeedbackConfig.endpoint, isEmpty);
       expect(FeedbackConfig.isConfigured, isFalse);
@@ -86,19 +80,20 @@ void main() {
       service.close();
     });
 
-    test('omits contactEmail when empty', () async {
-      Map<String, dynamic>? sent;
-      final client = MockClient((req) async {
-        sent = jsonDecode(req.body) as Map<String, dynamic>;
-        return http.Response(jsonEncode({'ok': true}), 200);
+    test('rejects an empty contact email before network', () async {
+      final client = MockClient((_) async {
+        fail('empty email must not reach the service');
       });
       final service = FeedbackService(endpoint: endpoint, client: client);
-      await service.submit(
-        category: 'feature',
-        subject: 'A good subject',
-        message: 'A long enough message body.',
+      await expectLater(
+        service.submit(
+          category: 'feature',
+          subject: 'A good subject',
+          message: 'A long enough message body.',
+          contactEmail: '',
+        ),
+        throwsA(isA<FeedbackException>()),
       );
-      expect(sent!.containsKey('contactEmail'), isFalse);
       service.close();
     });
 
@@ -110,11 +105,21 @@ void main() {
       });
       final service = FeedbackService(endpoint: endpoint, client: client);
       await expectLater(
-        service.submit(category: 'spam', subject: 'ok subject', message: 'long enough message'),
+        service.submit(
+          category: 'spam',
+          subject: 'ok subject',
+          message: 'long enough message',
+          contactEmail: 'user@example.com',
+        ),
         throwsA(isA<FeedbackException>()),
       );
       await expectLater(
-        service.submit(category: 'bug', subject: 'hi', message: 'long enough message'),
+        service.submit(
+          category: 'bug',
+          subject: 'hi',
+          message: 'long enough message',
+          contactEmail: 'user@example.com',
+        ),
         throwsA(isA<FeedbackException>()),
       );
       expect(called, isFalse);
@@ -127,7 +132,12 @@ void main() {
         client: MockClient((_) async => http.Response('{}', 200)),
       );
       await expectLater(
-        service.submit(category: 'bug', subject: 'ok subject', message: 'long enough message'),
+        service.submit(
+          category: 'bug',
+          subject: 'ok subject',
+          message: 'long enough message',
+          contactEmail: 'user@example.com',
+        ),
         throwsA(isA<FeedbackException>()),
       );
       service.close();
@@ -135,11 +145,19 @@ void main() {
 
     test('surfaces server error message (failure keeps draft)', () async {
       final client = MockClient(
-        (_) async => http.Response(jsonEncode({'ok': false, 'error': 'Too many requests.'}), 429),
+        (_) async => http.Response(
+          jsonEncode({'ok': false, 'error': 'Too many requests.'}),
+          429,
+        ),
       );
       final service = FeedbackService(endpoint: endpoint, client: client);
       try {
-        await service.submit(category: 'bug', subject: 'ok subject', message: 'long enough message here');
+        await service.submit(
+          category: 'bug',
+          subject: 'ok subject',
+          message: 'long enough message here',
+          contactEmail: 'user@example.com',
+        );
         fail('expected throw');
       } on FeedbackException catch (e) {
         expect(e.message, contains('Too many'));
@@ -151,9 +169,16 @@ void main() {
       final client = MockClient((_) async => http.Response('oops', 500));
       final service = FeedbackService(endpoint: endpoint, client: client);
       await expectLater(
-        service.submit(category: 'bug', subject: 'ok subject', message: 'long enough message here'),
+        service.submit(
+          category: 'bug',
+          subject: 'ok subject',
+          message: 'long enough message here',
+          contactEmail: 'user@example.com',
+        ),
         throwsA(
-          predicate<FeedbackException>((e) => e.message.contains('unavailable')),
+          predicate<FeedbackException>(
+            (e) => e.message.contains('unavailable'),
+          ),
         ),
       );
       service.close();
@@ -163,7 +188,12 @@ void main() {
       final client = MockClient((_) async => throw Exception('socket'));
       final service = FeedbackService(endpoint: endpoint, client: client);
       await expectLater(
-        service.submit(category: 'bug', subject: 'ok subject', message: 'long enough message here'),
+        service.submit(
+          category: 'bug',
+          subject: 'ok subject',
+          message: 'long enough message here',
+          contactEmail: 'user@example.com',
+        ),
         throwsA(
           predicate<FeedbackException>((e) => e.message.contains('connection')),
         ),
@@ -175,7 +205,12 @@ void main() {
       final client = MockClient((_) async => http.Response('not-json', 200));
       final service = FeedbackService(endpoint: endpoint, client: client);
       await expectLater(
-        service.submit(category: 'bug', subject: 'ok subject', message: 'long enough message here'),
+        service.submit(
+          category: 'bug',
+          subject: 'ok subject',
+          message: 'long enough message here',
+          contactEmail: 'user@example.com',
+        ),
         throwsA(isA<FeedbackException>()),
       );
       service.close();
@@ -192,7 +227,12 @@ void main() {
         timeout: const Duration(milliseconds: 20),
       );
       await expectLater(
-        service.submit(category: 'bug', subject: 'ok subject', message: 'long enough message here'),
+        service.submit(
+          category: 'bug',
+          subject: 'ok subject',
+          message: 'long enough message here',
+          contactEmail: 'user@example.com',
+        ),
         throwsA(
           predicate<FeedbackException>((e) => e.message.contains('timed out')),
         ),

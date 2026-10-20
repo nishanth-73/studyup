@@ -32,12 +32,19 @@ app.
   accepted-friend-only, opt-in-aware aggregate access and a metadata-only
   progress event table for friend-scoped realtime invalidation. Raw study
   sessions and per-session day rows are never published.
+- `supabase/migrations/20261114_community_weekly_dedup.sql` — corrects
+  friend leaderboard weekly totals by clipping intervals to the requested
+  Monday-to-Monday window and merging overlapping sessions before summing.
+  Friendship controls who may read the aggregate, not when eligible study
+  time was recorded.
 - `lib/features/social/` — `SocialRemote` (all Supabase queries),
   `SessionSyncService` (idempotent upload, local persistence remains
   authoritative), providers (live gating, friend-scoped realtime
   invalidation, lifecycle refresh, and retry fallback).
 - Community — live server leaderboard (friends scope of
-  `leaderboard_scope`), podium/comparison/rows from one ranking; demo
+  `leaderboard_scope`), podium/comparison/rows from one current-week
+  ranking; the week is Monday 00:00 through the following Monday 00:00 in
+  the viewing device's local timezone (converted to UTC for the RPC); demo
   fixtures only offline.
 - Friends — live friends list, incoming requests (realtime),
   display-name search, send/accept/decline/cancel, remove; privacy
@@ -107,7 +114,8 @@ app.
    `supabase/migrations/20261102_social_backend.sql`,
    `supabase/migrations/20261104_hardening_fix.sql`,
    `supabase/migrations/20261112_friends_zero_progress.sql`, and
-   `supabase/migrations/20261113_community_progress_realtime.sql`, in
+   `supabase/migrations/20261113_community_progress_realtime.sql`, and
+   `supabase/migrations/20261114_community_weekly_dedup.sql`, in
    that order.
    The third file is **required**: without it
    `invitation_preview`/`accept_invitation` fail with

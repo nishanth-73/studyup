@@ -29,7 +29,7 @@ void main() {
     expect(find.text('Category'), findsOneWidget);
     expect(find.text('Subject'), findsOneWidget);
     expect(find.text('Message'), findsOneWidget);
-    expect(find.text('Contact email (optional)'), findsOneWidget);
+    expect(find.text('Contact email (required)'), findsOneWidget);
     expect(find.text('Send feedback'), findsOneWidget);
   });
 
@@ -42,6 +42,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('min 3'), findsOneWidget);
     expect(find.textContaining('min 10'), findsOneWidget);
+    expect(find.text('Enter your contact email.'), findsOneWidget);
   });
 
   testWidgets('invalid contact email is rejected before network', (
@@ -54,11 +55,13 @@ void main() {
       'Timer kept running',
     );
     await tester.enterText(
-      find.widgetWithText(TextField, 'What happened, step by step…').hitTestable(),
+      find
+          .widgetWithText(TextField, 'What happened, step by step…')
+          .hitTestable(),
       'A sufficiently long message body here.',
     );
     await tester.enterText(
-      find.widgetWithText(TextField, 'you@example.com — only for replies').hitTestable(),
+      find.widgetWithText(TextField, 'you@example.com').hitTestable(),
       'not-an-email',
     );
     await tester.tap(find.text('Send feedback'));
@@ -79,9 +82,9 @@ void main() {
       ),
     );
     await tester.pumpWidget(
-      _harness(overrides: [
-        feedbackSubmitterProvider.overrideWithValue(submitter),
-      ]),
+      _harness(
+        overrides: [feedbackSubmitterProvider.overrideWithValue(submitter)],
+      ),
     );
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -89,8 +92,14 @@ void main() {
       'My subject here',
     );
     await tester.enterText(
-      find.widgetWithText(TextField, 'What happened, step by step…').hitTestable(),
+      find
+          .widgetWithText(TextField, 'What happened, step by step…')
+          .hitTestable(),
       'A sufficiently long message body here.',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'you@example.com').hitTestable(),
+      'user@example.com',
     );
     await tester.tap(find.text('Send feedback'));
     await tester.pump(); // start async submit

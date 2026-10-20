@@ -34,7 +34,12 @@ const okFetch = () =>
 Deno.test("accepts valid POST and returns the Resend id (accepted, not delivered)", async () => {
   clearRateLimit();
   const res = await handleRequest(
-    req({ category: "bug", subject: "Timer kept running", message: "Step 1, step 2, it kept ticking." }),
+    req({
+      category: "bug",
+      subject: "Timer kept running",
+      message: "Step 1, step 2, it kept ticking.",
+      contactEmail: "user@example.com",
+    }),
     ENV,
     okFetch as typeof fetch,
   );
@@ -43,7 +48,7 @@ Deno.test("accepts valid POST and returns the Resend id (accepted, not delivered
   assertEquals(data, { ok: true, id: "mock-resend-id" });
 });
 
-Deno.test("forwards optional contact email as reply_to, never as recipient", async () => {
+Deno.test("forwards required contact email as reply_to, never as recipient", async () => {
   clearRateLimit();
   let sent: Record<string, unknown> = {};
   const capture = ((_url: string | URL | Request, init?: RequestInit) => {
@@ -83,6 +88,17 @@ Deno.test("rejects invalid category / short message / bad email", async () => {
     const res = await handleRequest(req(body), ENV, okFetch as typeof fetch);
     assertEquals(res.status, 400);
   }
+  const missingEmail = await handleRequest(
+    req({
+      category: "bug",
+      subject: "Valid subject here",
+      message: "A long enough message body here.",
+    }),
+    ENV,
+    okFetch as typeof fetch,
+  );
+  assertEquals(missingEmail.status, 400);
+  assert((await missingEmail.text()).includes("Contact email is required."));
 });
 
 Deno.test("rejects non-POST methods with 405 + Allow header", async () => {
@@ -111,7 +127,12 @@ Deno.test("refuses requests without the gateway apikey header", async () => {
 Deno.test("returns non-sensitive 500 when env is missing (never leaks values)", async () => {
   clearRateLimit();
   const res = await handleRequest(
-    req({ category: "bug", subject: "Valid subject here", message: "A long enough message body here." }),
+    req({
+      category: "bug",
+      subject: "Valid subject here",
+      message: "A long enough message body here.",
+      contactEmail: "user@example.com",
+    }),
     { RESEND_API_KEY: "", FEEDBACK_TO_EMAIL: "", FEEDBACK_FROM_EMAIL: "" },
     okFetch as typeof fetch,
   );
@@ -127,7 +148,12 @@ Deno.test("maps Resend provider failure to 502 without leaking provider detail",
       new Response(JSON.stringify({ message: "secret-provider-reason" }), { status: 403 }),
     )) as typeof fetch;
   const res = await handleRequest(
-    req({ category: "bug", subject: "Valid subject here", message: "A long enough message body here." }),
+    req({
+      category: "bug",
+      subject: "Valid subject here",
+      message: "A long enough message body here.",
+      contactEmail: "user@example.com",
+    }),
     ENV,
     failing,
   );
@@ -138,7 +164,12 @@ Deno.test("maps Resend provider failure to 502 without leaking provider detail",
 
 Deno.test("rate-limits floods with 429", async () => {
   clearRateLimit();
-  const payload = { category: "other", subject: "Valid subject here", message: "A long enough message body here." };
+  const payload = {
+    category: "other",
+    subject: "Valid subject here",
+    message: "A long enough message body here.",
+    contactEmail: "user@example.com",
+  };
   for (let i = 0; i < 5; i++) {
     const r = await handleRequest(
       new Request("http://localhost/", {

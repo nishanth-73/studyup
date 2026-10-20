@@ -20,8 +20,9 @@ class EdgeInvokeResult {
   const EdgeInvokeResult({required this.status, this.data});
 }
 
-typedef EdgeInvoker =
-    Future<EdgeInvokeResult> Function(Map<String, Object?> body);
+typedef EdgeInvoker = Future<EdgeInvokeResult> Function(
+  Map<String, Object?> body,
+);
 
 Future<EdgeInvokeResult> _defaultInvoker(Map<String, Object?> body) async {
   final res = await Supabase.instance.client.functions.invoke(
@@ -50,7 +51,7 @@ class SupabaseFeedbackService {
     required String category,
     required String subject,
     required String message,
-    String? contactEmail,
+    required String contactEmail,
     String appVersion = studyupAppVersion,
     String? platform,
   }) async {
@@ -64,15 +65,15 @@ class SupabaseFeedbackService {
     if (subjectError != null) throw FeedbackException(subjectError);
     final messageError = validateFeedbackMessage(message);
     if (messageError != null) throw FeedbackException(messageError);
-    final emailError = validateFeedbackContactEmail(contactEmail ?? '');
+    final emailError = validateFeedbackContactEmail(contactEmail);
     if (emailError != null) throw FeedbackException(emailError);
 
-    final contact = (contactEmail ?? '').trim();
+    final contact = contactEmail.trim();
     final body = <String, Object?>{
       'category': cat,
       'subject': subject.trim(),
       'message': message.trim(),
-      if (contact.isNotEmpty) 'contactEmail': contact,
+      'contactEmail': contact,
       if (appVersion.trim().isNotEmpty) 'appVersion': appVersion.trim(),
       if (platform != null && platform.trim().isNotEmpty)
         'platform': platform.trim(),

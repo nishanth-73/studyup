@@ -37,22 +37,24 @@ void main() {
       expect(sent!['platform'], 'android');
     });
 
-    test('omits empty contact email and platform', () async {
-      Map<String, Object?>? sent;
+    test('rejects empty contact email before invoking the function', () async {
+      var called = false;
       final service = SupabaseFeedbackService(
-        invoker: (body) async {
-          sent = body;
+        invoker: (_) async {
+          called = true;
           return const EdgeInvokeResult(status: 200, data: {'ok': true});
         },
       );
-      await service.submit(
-        category: 'feature',
-        subject: 'A good subject',
-        message: 'A long enough message body.',
+      await expectLater(
+        service.submit(
+          category: 'feature',
+          subject: 'A good subject',
+          message: 'A long enough message body.',
+          contactEmail: '',
+        ),
+        throwsA(isA<FeedbackException>()),
       );
-      expect(sent!.containsKey('contactEmail'), isFalse);
-      expect(sent!.containsKey('platform'), isFalse);
-      expect(sent!['appVersion'], studyupAppVersion);
+      expect(called, isFalse);
     });
 
     test('validates locally without invoking', () async {
@@ -68,6 +70,7 @@ void main() {
           category: 'spam',
           subject: 'ok subject',
           message: 'long enough message',
+          contactEmail: 'user@example.com',
         ),
         throwsA(isA<FeedbackException>()),
       );
@@ -76,6 +79,7 @@ void main() {
           category: 'bug',
           subject: 'hi',
           message: 'long enough message',
+          contactEmail: 'user@example.com',
         ),
         throwsA(isA<FeedbackException>()),
       );
@@ -94,6 +98,7 @@ void main() {
           category: 'bug',
           subject: 'ok subject',
           message: 'long enough message here',
+          contactEmail: 'user@example.com',
         ),
         throwsA(
           predicate<FeedbackException>((e) => e.message.contains('Too many')),
@@ -101,91 +106,106 @@ void main() {
       );
     });
 
-    test('maps FunctionsHttpException 429/500 to draft-safe messages', () async {
-      final tooMany = SupabaseFeedbackService(
-        invoker: (_) async => throw const FunctionsHttpException(
-          status: 429,
-          details: {'ok': false, 'error': ''},
-        ),
-      );
-      await expectLater(
-        tooMany.submit(
-          category: 'bug',
-          subject: 'ok subject',
-          message: 'long enough message here',
-        ),
-        throwsA(
-          predicate<FeedbackException>((e) => e.message.contains('Too many')),
-        ),
-      );
+    test(
+      'maps FunctionsHttpException 429/500 to draft-safe messages',
+      () async {
+        final tooMany = SupabaseFeedbackService(
+          invoker: (_) async => throw const FunctionsHttpException(
+            status: 429,
+            details: {'ok': false, 'error': ''},
+          ),
+        );
+        await expectLater(
+          tooMany.submit(
+            category: 'bug',
+            subject: 'ok subject',
+            message: 'long enough message here',
+            contactEmail: 'user@example.com',
+          ),
+          throwsA(
+            predicate<FeedbackException>((e) => e.message.contains('Too many')),
+          ),
+        );
 
-      final broken = SupabaseFeedbackService(
-        invoker: (_) async =>
-            throw const FunctionsHttpException(status: 502, details: null),
-      );
-      await expectLater(
-        broken.submit(
-          category: 'bug',
-          subject: 'ok subject',
-          message: 'long enough message here',
-        ),
-        throwsA(
-          predicate<FeedbackException>((e) => e.message.contains('unavailable')),
-        ),
-      );
-    });
+        final broken = SupabaseFeedbackService(
+          invoker: (_) async =>
+              throw const FunctionsHttpException(status: 502, details: null),
+        );
+        await expectLater(
+          broken.submit(
+            category: 'bug',
+            subject: 'ok subject',
+            message: 'long enough message here',
+            contactEmail: 'user@example.com',
+          ),
+          throwsA(
+            predicate<FeedbackException>(
+              (e) => e.message.contains('unavailable'),
+            ),
+          ),
+        );
+      },
+    );
 
-    test('marks the undeployed-function gateway 404 as edgeFunctionMissing', () async {
-      for (final invoker in <Future<EdgeInvokeResult> Function()>[
-        () async => throw const FunctionsHttpException(
-              status: 404,
-              details: {
-                'code': 'NOT_FOUND',
-                'message': 'Requested function was not found',
-              },
-            ),
-        () async => const EdgeInvokeResult(
-              status: 404,
-              data: {
-                'code': 'NOT_FOUND',
-                'message': 'Requested function was not found',
-              },
-            ),
-      ]) {
-        final service = SupabaseFeedbackService(invoker: (_) => invoker());
+    test(
+      'marks the undeployed-function gateway 404 as edgeFunctionMissing',
+      () async {
+        for (final invoker in <Future<EdgeInvokeResult> Function()>[
+          () async => throw const FunctionsHttpException(
+            status: 404,
+            details: {
+              'code': 'NOT_FOUND',
+              'message': 'Requested function was not found',
+            },
+          ),
+          () async => const EdgeInvokeResult(
+            status: 404,
+            data: {
+              'code': 'NOT_FOUND',
+              'message': 'Requested function was not found',
+            },
+          ),
+        ]) {
+          final service = SupabaseFeedbackService(invoker: (_) => invoker());
+          try {
+            await service.submit(
+              category: 'bug',
+              subject: 'ok subject',
+              message: 'long enough message here',
+              contactEmail: 'user@example.com',
+            );
+            fail('expected throw');
+          } on FeedbackException catch (e) {
+            expect(e.edgeFunctionMissing, isTrue);
+            expect(e.message, contains('draft is kept'));
+          }
+        }
+      },
+    );
+
+    test(
+      'a deployed function error on 404 is surfaced without the flag',
+      () async {
+        final service = SupabaseFeedbackService(
+          invoker: (_) async => const EdgeInvokeResult(
+            status: 404,
+            data: {'ok': false, 'error': 'Unknown feedback category.'},
+          ),
+        );
         try {
           await service.submit(
             category: 'bug',
             subject: 'ok subject',
             message: 'long enough message here',
+            contactEmail: 'user@example.com',
           );
           fail('expected throw');
         } on FeedbackException catch (e) {
-          expect(e.edgeFunctionMissing, isTrue);
-          expect(e.message, contains('draft is kept'));
+          expect(e.edgeFunctionMissing, isFalse);
+          expect(e.message, 'Unknown feedback category.');
         }
-      }
-    });
-
-    test('a deployed function error on 404 is surfaced without the flag', () async {
-      final service = SupabaseFeedbackService(
-        invoker: (_) async => const EdgeInvokeResult(
-          status: 404,
-          data: {'ok': false, 'error': 'Unknown feedback category.'},
-        ),
-      );
-      try {
-        await service.submit(
-          category: 'bug',
-          subject: 'ok subject',
-          message: 'long enough message here',
-        );
-        fail('expected throw');
-      } on FeedbackException catch (e) {
-        expect(e.edgeFunctionMissing, isFalse);
-        expect(e.message, 'Unknown feedback category.');
-      }
-    });
+      },
+    );
 
     test('maps network failure and timeout to draft-safe messages', () async {
       final offline = SupabaseFeedbackService(
@@ -196,6 +216,7 @@ void main() {
           category: 'bug',
           subject: 'ok subject',
           message: 'long enough message here',
+          contactEmail: 'user@example.com',
         ),
         throwsA(
           predicate<FeedbackException>((e) => e.message.contains('connection')),
@@ -214,6 +235,7 @@ void main() {
           category: 'bug',
           subject: 'ok subject',
           message: 'long enough message here',
+          contactEmail: 'user@example.com',
         ),
         throwsA(
           predicate<FeedbackException>((e) => e.message.contains('timed out')),
@@ -231,6 +253,7 @@ void main() {
           category: 'bug',
           subject: 'ok subject',
           message: 'long enough message here',
+          contactEmail: 'user@example.com',
         ),
         throwsA(isA<FeedbackException>()),
       );
