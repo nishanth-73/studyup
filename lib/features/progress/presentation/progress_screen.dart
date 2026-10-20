@@ -503,15 +503,17 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                _TodayGoalProgressRing(
-                  trackedSeconds: trackedSeconds,
-                  goalMinutes: goalMinutes,
-                  selectedDate: _today,
-                  sessionsRevision: progress.sessions,
-                  size: MediaQuery.sizeOf(context).width < 360 ? 88 : 100,
-                ),
               ],
+            ),
+            const SizedBox(height: 14),
+            Center(
+              child: _TodayGoalProgressRing(
+                trackedSeconds: trackedSeconds,
+                goalMinutes: goalMinutes,
+                selectedDate: _today,
+                sessionsRevision: progress.sessions,
+                size: MediaQuery.sizeOf(context).width < 360 ? 88 : 100,
+              ),
             ),
             const SizedBox(height: 14),
             _CheckInOutButtons(

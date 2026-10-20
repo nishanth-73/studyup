@@ -462,6 +462,11 @@ void main() {
         tester.getCenter(percentageFinder),
         tester.getCenter(progressFinder),
       );
+      expect(
+        tester.getCenter(ringFinder).dy,
+        lessThan(tester.getCenter(find.text('Check Out')).dy),
+        reason: 'ring sits above the Check In / Check Out controls',
+      );
       expect(find.text("Today's Session"), findsOneWidget);
       expectNoErrors(tester);
     });
@@ -491,6 +496,12 @@ void main() {
         const Size(88, 88),
       );
       expect(tester.getSize(progressFinder), const Size(88, 88));
+      expect(
+        tester
+            .getCenter(find.byKey(const ValueKey('today-session-goal-ring')))
+            .dy,
+        lessThan(tester.getCenter(find.text('Check Out')).dy),
+      );
       expectNoErrors(tester);
     });
 
