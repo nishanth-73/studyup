@@ -132,12 +132,18 @@ class _ViewerRemote extends SocialRemote {
         'https://example.supabase.co',
         'test-anon-key',
         authOptions: const AuthClientOptions(autoRefreshToken: false),
+        realtimeClientOptions: const RealtimeClientOptions(
+          disconnectOnEmptyChannelsAfter: Duration.zero,
+        ),
       ),
       super(
         SupabaseClient(
           'https://example.supabase.co',
           'test-anon-key',
           authOptions: const AuthClientOptions(autoRefreshToken: false),
+          realtimeClientOptions: const RealtimeClientOptions(
+            disconnectOnEmptyChannelsAfter: Duration.zero,
+          ),
         ),
       );
 
@@ -173,14 +179,32 @@ class _ViewerRemote extends SocialRemote {
   Future<List<RemoteFriend>> myFriends() async => server.friendsOf(viewer);
 
   @override
-  RealtimeChannel subscribeFriendships(void Function() onChange) {
+  RealtimeChannel subscribeFriendships(
+    void Function() onChange, {
+    void Function(RealtimeSubscribeStatus status, Object? error)? onStatus,
+  }) {
     server.realtimeListeners.add(onChange);
+    onStatus?.call(RealtimeSubscribeStatus.subscribed, null);
     return client.channel('friendships-${viewer.hashCode}');
   }
 
   @override
-  RealtimeChannel subscribeIncomingRequests(void Function() onChange) =>
-      client.channel('requests-${viewer.hashCode}');
+  RealtimeChannel subscribeIncomingRequests(
+    void Function() onChange, {
+    void Function(RealtimeSubscribeStatus status, Object? error)? onStatus,
+  }) {
+    onStatus?.call(RealtimeSubscribeStatus.subscribed, null);
+    return client.channel('requests-${viewer.hashCode}');
+  }
+
+  @override
+  RealtimeChannel subscribeProgressChanges(
+    void Function() onChange, {
+    void Function(RealtimeSubscribeStatus status, Object? error)? onStatus,
+  }) {
+    onStatus?.call(RealtimeSubscribeStatus.subscribed, null);
+    return client.channel('progress-${viewer.hashCode}');
+  }
 }
 
 DateTime mondayOf(DateTime d) {
@@ -293,7 +317,7 @@ void main() {
       final other = entries.where((e) => e.memberId != who).toList();
       expect(other, hasLength(1), reason: '$who must see the friend');
       expect(other.single.weekSeconds, 0);
-      expect(other.single.hasData, isFalse, reason: 'no data, not missing');
+      expect(other.single.hasData, isTrue, reason: 'a shared zero is data');
       expect(other.single.level, 1);
     }
   });
@@ -328,38 +352,43 @@ void main() {
     expect(aliceRow.single.hasData, isFalse);
   });
 
-  test('the sender refreshes when the friendship is created (realtime)', () async {
-    SharedPreferences.setMockInitialValues({});
-    final server = _FakeServer()
-      ..addUser(_Profile('A', 'Alice', avatarId: 'avatar-a'))
-      ..addUser(_Profile('B', 'Bob', avatarId: 'avatar-b'));
-    final week = mondayOf(DateTime.now());
-    final alice = _ViewerRemote(server, 'A');
-    final bob = _ViewerRemote(server, 'B');
-    final aliceContainer = _viewerContainer(alice, 'A');
-    addTearDown(aliceContainer.dispose);
-    await ready(aliceContainer);
+  test(
+    'the sender refreshes when the friendship is created (realtime)',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final server = _FakeServer()
+        ..addUser(_Profile('A', 'Alice', avatarId: 'avatar-a'))
+        ..addUser(_Profile('B', 'Bob', avatarId: 'avatar-b'));
+      final week = mondayOf(DateTime.now());
+      final alice = _ViewerRemote(server, 'A');
+      final bob = _ViewerRemote(server, 'B');
+      final aliceContainer = _viewerContainer(alice, 'A');
+      addTearDown(aliceContainer.dispose);
+      await ready(aliceContainer);
 
-    // A's Community tab is open, subscribed to friendship changes.
-    aliceContainer.listen(remoteRealtimeProvider, (_, _) {});
-    expect(server.realtimeListeners, isNotEmpty);
+      // A's Community tab is open, subscribed to friendship changes.
+      aliceContainer.listen(remoteRealtimeProvider, (_, _) {});
+      expect(server.realtimeListeners, isNotEmpty);
 
-    var entries = await aliceContainer.read(
-      communityDisplayProvider(week).future,
-    );
-    expect(entries.where((e) => e.memberId == 'B'), isEmpty);
+      var entries = await aliceContainer.read(
+        communityDisplayProvider(week).future,
+      );
+      expect(entries.where((e) => e.memberId == 'B'), isEmpty);
 
-    // B accepts on the other device: the friendship event fires here.
-    final token = await alice.createInvitation();
-    await bob.acceptInvitation(token);
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+      // B accepts on the other device: the friendship event fires here.
+      final token = await alice.createInvitation();
+      await bob.acceptInvitation(token);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
 
-    entries = await aliceContainer.read(communityDisplayProvider(week).future);
-    final friend = entries.where((e) => e.memberId == 'B').toList();
-    expect(friend, hasLength(1));
-    expect(friend.single.displayName, 'Bob');
-    expect(friend.single.avatarId, 'avatar-b');
-  });
+      entries = await aliceContainer.read(
+        communityDisplayProvider(week).future,
+      );
+      final friend = entries.where((e) => e.memberId == 'B').toList();
+      expect(friend, hasLength(1));
+      expect(friend.single.displayName, 'Bob');
+      expect(friend.single.avatarId, 'avatar-b');
+    },
+  );
 
   test('repeated taps never duplicate the friendship (idempotent)', () async {
     SharedPreferences.setMockInitialValues({});
@@ -378,11 +407,12 @@ void main() {
     expect(bob.acceptCalls, 1);
 
     // Second tap on the same link: the server refuses, no second row.
-    await expectLater(
-      bob.acceptInvitation(token),
-      throwsA(isA<StateError>()),
+    await expectLater(bob.acceptInvitation(token), throwsA(isA<StateError>()));
+    expect(
+      bob.acceptCalls,
+      2,
+      reason: 'the attempt was made, not silently skipped',
     );
-    expect(bob.acceptCalls, 2, reason: 'the attempt was made, not silently skipped');
     expect(
       server.friendships.where((p) => p == _FakeServer.pair('A', 'B')).length,
       1,
@@ -423,7 +453,7 @@ void main() {
     final aliceRow = entries.firstWhere((e) => e.memberId == 'A');
     expect(aliceRow.isSelf, isTrue);
     expect(aliceRow.weekSeconds, 0);
-expect(aliceRow.rank, 2);
+    expect(aliceRow.rank, 2);
     // No other members exist: nothing was fabricated.
     expect(entries, hasLength(2));
   });
@@ -463,18 +493,18 @@ expect(aliceRow.rank, 2);
     // The same underlying total is visible in both directions: the query
     // both users run against is the same friends scope with the same week
     // window, so nobody sees a different number than the other.
-final aEntries = await aliceContainer.read(
+    final aEntries = await aliceContainer.read(
       communityDisplayProvider(week).future,
     );
     final bobRow = aEntries.firstWhere((e) => e.memberId == 'B');
-    expect(bobRow.hasData, isFalse, reason: 'Bob has not studied yet');
-expect(bobRow.weekSeconds, 0, reason: 'a genuine zero, not a failure');
+    expect(bobRow.hasData, isTrue, reason: 'a shared zero is data');
+    expect(bobRow.weekSeconds, 0, reason: 'a genuine zero, not a failure');
     // Both users run the same friends-scope query over the same week, so
     // each side's raw result set is identical: no one can see a different
     // number than the other.
     final bIds = server.boardOf('B').map((r) => r.userId).toSet();
     final aIds = server.boardOf('A').map((r) => r.userId).toSet();
-expect(bIds, aIds);
+    expect(bIds, aIds);
     expect(bIds, containsAll(<String>['A', 'B']));
   });
 }

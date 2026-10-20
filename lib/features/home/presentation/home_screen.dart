@@ -11,6 +11,7 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/ui_kit.dart';
 import '../../../core/widgets/app_shell.dart';
 import '../../../core/widgets/date_picker_sheet.dart';
+import '../../auth/data/auth_controller.dart';
 import '../data/home_models.dart';
 import '../../avatar/data/user_profile.dart';
 import '../../avatar/presentation/avatar_widgets.dart';
@@ -96,11 +97,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       final service = NotificationService.instance;
       if (await service.permissionPrompted()) return;
-      // "After entering the app" = past onboarding/auth with demo access.
-      // Widget-test pumps (no signed-in profile) never see the dialog.
-      final signedIn =
-          ref.read(userProfileProvider).valueOrNull?.demoSignedIn ?? false;
-      if (!signedIn) return;
+      if (ref.read(backendUserIdProvider) == null) return;
       if (!mounted) return;
       final enable = await showDialog<bool>(
         context: context,
@@ -153,8 +150,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           );
         }
       }
-    } catch (_) {
-      // Permission flow must never break entering the app.
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[notifications] permission prompt failed without blocking Home: '
+        '$error\n$stackTrace',
+      );
     }
   }
 

@@ -160,7 +160,10 @@ void main() {
       // Empty submit shows inline errors, claims nothing.
       await tester.tap(find.text('Send feedback'));
       await tester.pump();
-      expect(find.text('Add a short subject (min 3 characters).'), findsOneWidget);
+      expect(
+        find.text('Add a short subject (min 3 characters).'),
+        findsOneWidget,
+      );
       expect(
         find.text('Tell us a little more (min 10 characters).'),
         findsOneWidget,
@@ -199,7 +202,7 @@ void main() {
       expect(find.textContaining('Supabase'), findsNothing);
       expect(find.text('Your rights & choices'), findsNothing);
       expect(find.text('Copy data as JSON'), findsNothing);
-      // Offline test env: demo mode, exit keeps data. The action rows sit
+      // No backend is configured in this test. The action rows sit
       // below the fold in the lazy list: scroll them into view first.
       await tester.scrollUntilVisible(
         find.text('Erase local data'),
@@ -207,7 +210,7 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       await tester.pump();
-      expect(find.text('Exit demo'), findsOneWidget);
+      expect(find.text('Sign out'), findsOneWidget);
       expect(find.text('Erase local data'), findsOneWidget);
       // The ListView builds lazily: scrolling this far disposes the header
       // row (and its back arrow), so scroll back up before navigating out.
@@ -223,10 +226,12 @@ void main() {
     testWidgets('Sign out with no profile explains honestly', (tester) async {
       await pumpProfile(tester);
       await tapRow(tester, 'Privacy & data');
-      await tapRow(tester, 'Exit demo');
+      await tapRow(tester, 'Sign out');
       await tester.pump();
       expect(
-        find.text('No profile is signed in on this device.'),
+        find.text(
+          'Sign-out is unavailable because the authentication backend is disconnected.',
+        ),
         findsOneWidget,
       );
     });
@@ -264,9 +269,7 @@ void main() {
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
       messenger.setMockMethodCallHandler(timerChannel, (_) async => null);
-      addTearDown(
-        () => messenger.setMockMethodCallHandler(timerChannel, null),
-      );
+      addTearDown(() => messenger.setMockMethodCallHandler(timerChannel, null));
       await pumpProfile(tester);
       SharedPreferences.setMockInitialValues({'probe.keep': 'yes'});
       await tapRow(tester, 'Privacy & data');
@@ -294,9 +297,7 @@ void main() {
         error = tester.takeException();
       }
       expect(
-        errors.every(
-          (e) => e.toString().contains('no routes for location'),
-        ),
+        errors.every((e) => e.toString().contains('no routes for location')),
         isTrue,
         reason: errors.join('\n---\n'),
       );
@@ -388,6 +389,58 @@ void main() {
       expect(find.text('Level 1'), findsNothing);
       expect(find.text('Streak & Level'), findsNothing);
       expect(find.text("Today's Session"), findsOneWidget);
+    });
+
+    testWidgets('Today’s Session ring animates to tracked goal progress', (
+      tester,
+    ) async {
+      final now = DateTime.now();
+      final dayStart = DateTime(now.year, now.month, now.day);
+      final trackedSeconds = now.difference(dayStart).inSeconds;
+      final goalMinutes = trackedSeconds < 30 ? 1 : trackedSeconds ~/ 30;
+      SharedPreferences.setMockInitialValues({
+        'studyup.tasks.v1': jsonEncode({todayKey(): []}),
+        'studyup.tasks.starterSeeded.v1': true,
+        'studyup.dailyStudyGoalMinutes.v1': goalMinutes,
+        'studyup.studySessions.v1': jsonEncode([
+          {
+            'id': 'today-session',
+            'subjectId': 'general',
+            'subjectName': 'Daily Study',
+            'checkInTime': dayStart.toIso8601String(),
+            'checkOutTime': now.toIso8601String(),
+            'pausedSeconds': trackedSeconds,
+            'studySegments': [
+              {
+                'startTime': dayStart.toIso8601String(),
+                'endTime': now.toIso8601String(),
+              },
+            ],
+          },
+        ]),
+      });
+      await pumpProgress(tester);
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final ringFinder = find.byKey(const ValueKey('today-session-goal-ring'));
+      final expectedProgress = (trackedSeconds / (goalMinutes * 60)).clamp(
+        0.0,
+        1.0,
+      );
+      expect(
+        tester.widget<CircularProgressIndicator>(ringFinder).value,
+        closeTo(expectedProgress, 0.01),
+      );
+      expect(
+        tester
+            .getSize(
+              find.byKey(const ValueKey('today-session-goal-ring-container')),
+            )
+            .height,
+        152,
+      );
+      expect(find.text("Today's Session"), findsOneWidget);
+      expectNoErrors(tester);
     });
 
     testWidgets('level card shows tier + XP with no progress bar', (

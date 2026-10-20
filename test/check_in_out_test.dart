@@ -141,7 +141,7 @@ void main() {
     });
   });
 
-  group('Session artwork follows check-in state', () {
+  group('Today’s Session progress indicator', () {
     const timerChannel = MethodChannel('studyup/study_timer');
 
     setUp(() {
@@ -188,43 +188,48 @@ void main() {
       return container;
     }
 
-    bool artPlaying(WidgetTester tester) {
-      final art = tester.widget<SvgArt>(find.byType(SvgArt).first);
-      return art.controller?.isPlaying ?? false;
-    }
-
-    testWidgets('art loops while checked in, rests after check-out', (
+    testWidgets('shows the circular progress ring while studying and paused', (
       tester,
     ) async {
       final container = await pumpProgress(tester);
-      expect(artPlaying(tester), isTrue);
+      final ring = find.byKey(const ValueKey('today-session-goal-ring'));
+      expect(ring, findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsWidgets);
+      expect(find.byType(SvgArt), findsNothing);
 
       await container.read(studyProgressProvider.notifier).checkOut();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      expect(artPlaying(tester), isFalse);
-      // The artwork stays visible in the resting state.
-      expect(find.byType(SvgArt), findsWidgets);
+      expect(ring, findsOneWidget);
+      expect(find.byType(SvgArt), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('art restarts on check-in again', (tester) async {
+    testWidgets('ring remains available after resuming a paused session', (
+      tester,
+    ) async {
       final container = await pumpProgress(tester);
       final notifier = container.read(studyProgressProvider.notifier);
       await notifier.checkOut();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      expect(artPlaying(tester), isFalse);
 
       await notifier.checkIn();
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
-      expect(artPlaying(tester), isTrue);
+      expect(
+        find.byKey(const ValueKey('today-session-goal-ring')),
+        findsOneWidget,
+      );
+      expect(find.byType(SvgArt), findsNothing);
 
-      // Leave the session checked out so the 1s ticker stops teardown-clean.
+      // Leave the session paused so the 1s ticker stops teardown-clean.
       await notifier.checkOut();
       await tester.pump();
-      expect(artPlaying(tester), isFalse);
+      expect(
+        find.byKey(const ValueKey('today-session-goal-ring')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     });
   });

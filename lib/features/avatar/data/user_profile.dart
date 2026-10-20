@@ -28,7 +28,8 @@ bool isValidBlobVariant(int variant) =>
 ///
 /// First-launch funnel flags (all persisted here, one record):
 /// [slidesSeen] (3 intro slides), [setupComplete] (Blob + name + goal),
-/// [demoSignedIn] (temporary local demo auth until Supabase lands).
+/// [demoSignedIn] is retained only to read older local records; it is not
+/// an authentication source.
 /// Legacy installs stored only [onboardingComplete]; missing flags migrate
 /// to its value so old users are never re-prompted.
 ///
@@ -61,7 +62,7 @@ class UserProfile {
     this.blobShapeId,
     this.slidesSeen = true,
     this.setupComplete = true,
-    this.demoSignedIn = true,
+    this.demoSignedIn = false,
     this.demoEmail = '',
   });
 
@@ -129,7 +130,7 @@ class UserProfile {
       blobShapeId: json['blobShapeId'] as String?,
       slidesSeen: json['slidesSeen'] as bool? ?? complete,
       setupComplete: json['setupComplete'] as bool? ?? complete,
-      demoSignedIn: json['demoSignedIn'] as bool? ?? complete,
+      demoSignedIn: false,
       demoEmail: json['demoEmail'] as String? ?? '',
     );
   }

@@ -89,6 +89,7 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _initialized = false;
+  Future<void>? _initFuture;
 
   /// Becomes true when the native plugin is unreachable (widget tests,
   /// unsupported platforms). Plugin calls then silently no-op so study
@@ -134,9 +135,14 @@ class NotificationService {
     }
   }
 
-  Future<void> init() async {
-    if (_initialized) return;
-    _initialized = true;
+  Future<void> init() {
+    if (_initialized) return Future<void>.value();
+    return _initFuture ??= _initialize().whenComplete(() {
+      _initFuture = null;
+    });
+  }
+
+  Future<void> _initialize() async {
     _ensureTimeZones();
     // Status-bar small icon: the StudyUp mark vector
     // (res/drawable/ic_stat_studyup.xml). Android renders small icons
@@ -163,7 +169,15 @@ class NotificationService {
         context: 'while creating notification channels',
       );
     }
-    await _reloadUnreadCount();
+    try {
+      await _reloadUnreadCount();
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[notifications] could not load notification-center state: '
+        '$error\n$stackTrace',
+      );
+    }
+    _initialized = true;
   }
 
   void _ensureTimeZones() {
@@ -172,7 +186,10 @@ class NotificationService {
       tzdata.initializeTimeZones();
       _tzReady = true;
     } catch (_) {
-      // Time-zone data stays unavailable; scheduling degrades to a no-op.
+      debugPrint(
+        '[notifications] time-zone data unavailable; scheduled reminders '
+        'may not work until initialization succeeds.',
+      );
     }
   }
 

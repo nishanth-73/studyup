@@ -402,8 +402,8 @@ class LeaderboardEntry {
   /// snapshot for friends. Never estimated.
   final int weekSeconds;
 
-  /// False when the member shared no data for this week (shown as
-  /// "no shared data", not as zero effort).
+  /// False when the member has not shared progress for this week. In the
+  /// live friends board an opted-in member's successful zero is real data.
   final bool hasData;
 
   /// Current study streak in days (app's standard streak definition).

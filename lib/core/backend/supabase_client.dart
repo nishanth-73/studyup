@@ -6,11 +6,10 @@ import 'supabase_config.dart';
 
 /// Single reusable Supabase client for the whole app.
 ///
-/// Initialized once in [main] via [initBackend]. When credentials are
-/// missing the app keeps working fully offline (local demo mode) and
-/// every social feature reports "Backend not connected" instead of
-/// crashing or faking success. No secrets are stored here: the anon key
-/// comes from dart-defines and RLS enforces all access server-side.
+/// Initialized once in [main] via [initBackend]. Without credentials,
+/// authentication and protected features are unavailable; local data is
+/// not uploaded. No secrets are stored here: the anon key comes from
+/// dart-defines and RLS enforces all access server-side.
 Future<void> initBackend() async {
   if (!SupabaseConfig.isConfigured) {
     debugPrint(
@@ -24,8 +23,10 @@ Future<void> initBackend() async {
       publishableKey: SupabaseConfig.anonKey,
     );
   } catch (error) {
-    // Startup must never fail: offline mode covers storage/network faults.
-    debugPrint('StudyUp backend init failed (offline mode): $error');
+    // Authentication setup failures must not prevent the app from starting.
+    debugPrint(
+      'StudyUp backend init failed; authentication is unavailable: $error',
+    );
   }
 }
 

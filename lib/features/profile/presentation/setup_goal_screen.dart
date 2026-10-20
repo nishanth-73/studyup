@@ -76,77 +76,77 @@ class _SetupGoalScreenState extends ConsumerState<SetupGoalScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
-                child: Column(
-                  children: [
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final side = (constraints.maxWidth * 0.66).clamp(
-                          0,
-                          240,
-                        );
-                        return SizedBox(
-                          width: side.toDouble(),
-                          height: side.toDouble(),
-                          child: const SvgArt(
-                            asset: 'assets/images/team_goals.svg',
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Pick Your Daily Goal',
-                      style: AppTextStyles.title26,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Pick your daily goal to get on track.',
-                      style: AppTextStyles.secondary14,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        for (var h = _minHours; h <= _maxHours; h++)
-                          _GoalOption(
-                            label: '${h}h',
-                            selected: h == _hours,
-                            onTap: () => setState(() => _hours = h),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                  ],
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: (constraints.maxHeight - 32).clamp(
+                  0.0,
+                  double.infinity,
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-              child: PrimaryButton(
-                label: 'Continue',
-                icon: _saving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.onCta,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final side = (constraints.maxWidth * 0.66).clamp(0, 240);
+                      return SizedBox(
+                        width: side.toDouble(),
+                        height: side.toDouble(),
+                        child: const SvgArt(
+                          asset: 'assets/images/team_goals.svg',
                         ),
-                      )
-                    : const Icon(Icons.arrow_forward, size: 18),
-                onPressed: _saving ? null : _continue,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Pick Your Daily Goal',
+                    style: AppTextStyles.title26,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Pick your daily goal to get on track.',
+                    style: AppTextStyles.secondary14,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      for (var h = _minHours; h <= _maxHours; h++)
+                        _GoalOption(
+                          label: '${h}h',
+                          selected: h == _hours,
+                          onTap: () => setState(() => _hours = h),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
+                  PrimaryButton(
+                    label: 'Continue',
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.onCta,
+                            ),
+                          )
+                        : const Icon(Icons.arrow_forward, size: 18),
+                    onPressed: _saving ? null : _continue,
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );

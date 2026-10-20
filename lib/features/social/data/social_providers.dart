@@ -37,14 +37,18 @@ final inviteRemoteProvider = Provider<SocialRemote?>((ref) {
 });
 
 /// Accepted friends from the server (never demo data).
-final remoteFriendsProvider = FutureProvider<List<RemoteFriend>>((ref) async {
+final remoteFriendsProvider = FutureProvider.autoDispose<List<RemoteFriend>>((
+  ref,
+) async {
   final remote = ref.watch(socialRemoteProvider);
   if (remote == null) return const [];
   return remote.myFriends();
 });
 
 /// Incoming friend requests from the server.
-final remoteIncomingProvider = FutureProvider<List<RemoteRequest>>((ref) async {
+final remoteIncomingProvider = FutureProvider.autoDispose<List<RemoteRequest>>((
+  ref,
+) async {
   final remote = ref.watch(socialRemoteProvider);
   if (remote == null) return const [];
   return remote.incomingRequests();
@@ -53,28 +57,111 @@ final remoteIncomingProvider = FutureProvider<List<RemoteRequest>>((ref) async {
 /// Re-subscribes to incoming-request + friendship changes; invalidates
 /// the requests, friends, and leaderboard providers so the UI refreshes
 /// live (no polling, no session data broadcast).
-final remoteRealtimeProvider = Provider<void>((ref) {
+final remoteRealtimeProvider = Provider.autoDispose<void>((ref) {
   final remote = ref.watch(socialRemoteProvider);
   if (remote == null) return;
-  RealtimeChannel? requestsSub;
-  RealtimeChannel? friendsSub;
-  try {
-    requestsSub = remote.subscribeIncomingRequests(() {
-      ref.invalidate(remoteIncomingProvider);
-      ref.invalidate(remoteFriendsProvider);
-    });
-    friendsSub = remote.subscribeFriendships(() {
-      ref.invalidate(remoteFriendsProvider);
-      ref.invalidate(remoteFriendsBoardProvider);
-    });
-  } catch (_) {
-    // Realtime unavailable (offline/blocked) — refresh fallbacks apply.
+  final subscriptions = <RealtimeChannel>[];
+  final connected = <String, bool>{
+    'requests': false,
+    'friendships': false,
+    'progress': false,
+  };
+  var disposed = false;
+  Timer? refreshDebounce;
+  Timer? fallbackRefresh;
+
+  void refreshAll() {
+    if (disposed) return;
+    ref.invalidate(remoteIncomingProvider);
+    ref.invalidate(remoteFriendsProvider);
+    ref.invalidate(remoteFriendsBoardProvider);
   }
+
+  void scheduleRefresh() {
+    if (disposed) return;
+    refreshDebounce?.cancel();
+    refreshDebounce = Timer(const Duration(milliseconds: 300), refreshAll);
+  }
+
+  void updateConnection(
+    String key,
+    RealtimeSubscribeStatus status,
+    Object? error,
+  ) {
+    if (disposed) return;
+    final isConnected = status == RealtimeSubscribeStatus.subscribed;
+    connected[key] = isConnected;
+    if (isConnected) {
+      if (connected.values.every((value) => value)) {
+        fallbackRefresh?.cancel();
+        fallbackRefresh = null;
+      }
+      return;
+    }
+
+    debugPrint(
+      error == null
+          ? '[community] realtime $key subscription $status'
+          : '[community] realtime $key subscription $status: $error',
+    );
+    fallbackRefresh ??= Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => refreshAll(),
+    );
+    scheduleRefresh();
+  }
+
+  try {
+    subscriptions.add(
+      remote.subscribeIncomingRequests(
+        () {
+          if (disposed) return;
+          ref.invalidate(remoteIncomingProvider);
+        },
+        onStatus: (status, error) =>
+            updateConnection('requests', status, error),
+      ),
+    );
+    subscriptions.add(
+      remote.subscribeFriendships(
+        () {
+          if (disposed) return;
+          ref.invalidate(remoteFriendsProvider);
+          ref.invalidate(remoteFriendsBoardProvider);
+        },
+        onStatus: (status, error) =>
+            updateConnection('friendships', status, error),
+      ),
+    );
+    subscriptions.add(
+      remote.subscribeProgressChanges(
+        () {
+          if (disposed) return;
+          scheduleRefresh();
+        },
+        onStatus: (status, error) =>
+            updateConnection('progress', status, error),
+      ),
+    );
+  } catch (error) {
+    debugPrint('[community] could not create realtime subscriptions: $error');
+    fallbackRefresh ??= Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => refreshAll(),
+    );
+    scheduleRefresh();
+  }
+
   ref.onDispose(() async {
-    for (final sub in [requestsSub, friendsSub]) {
+    disposed = true;
+    refreshDebounce?.cancel();
+    fallbackRefresh?.cancel();
+    for (final subscription in subscriptions) {
       try {
-        await sub?.unsubscribe();
-      } catch (_) {}
+        await subscription.unsubscribe();
+      } catch (error) {
+        debugPrint('[community] realtime unsubscribe failed: $error');
+      }
     }
   });
 });
@@ -96,11 +183,8 @@ final remoteRealtimeProvider = Provider<void>((ref) {
 ///
 /// autoDispose: leaving and returning to Community refetches fresh server
 /// numbers instead of showing a stale cached board.
-final communityDisplayProvider =
-    FutureProvider.autoDispose.family<List<LeaderboardEntry>, DateTime>((
-      ref,
-      weekStart,
-    ) async {
+final communityDisplayProvider = FutureProvider.autoDispose
+    .family<List<LeaderboardEntry>, DateTime>((ref, weekStart) async {
       if (ref.watch(socialLiveProvider)) {
         return _remoteBoard(ref, weekStart);
       }
@@ -113,8 +197,8 @@ final communityDisplayProvider =
 /// can stay cached while sessions tick and only refetches on explicit
 /// invalidation (friendship changes, sync completions, resume) or on the
 /// next Community visit (autoDispose).
-final remoteFriendsBoardProvider =
-    FutureProvider.autoDispose.family<
+final remoteFriendsBoardProvider = FutureProvider.autoDispose
+    .family<
       ({List<LeaderboardEntry> current, List<LeaderboardEntry> previous}),
       DateTime
     >((ref, weekStart) async {
@@ -182,22 +266,20 @@ LeaderboardEntry _friendWithoutStats(RemoteFriend f) => LeaderboardEntry(
   blobVariant: f.blobVariant,
   isSelf: false,
   weekSeconds: 0,
-  hasData: false,
+  hasData: f.leaderboardOptIn,
   rank: 0,
   streakDays: 0,
   level: computeStudyLevel(0).level,
 );
 
-Future<List<LeaderboardEntry>> _remoteBoard(
-  Ref ref,
-  DateTime weekStart,
-) async {
+Future<List<LeaderboardEntry>> _remoteBoard(Ref ref, DateTime weekStart) async {
   final base = await ref.watch(remoteFriendsBoardProvider(weekStart).future);
   // Accepted friends, independent of progress. Watching the friendship
   // list here is also what makes a new friend appear on the Community
   // screen as soon as the relationship is created (realtime invalidation,
   // post-accept refresh, or the next visit) without an app restart.
   final friends = await ref.watch(remoteFriendsProvider.future);
+  final friendsById = {for (final friend in friends) friend.userId: friend};
   final selfId = ref.watch(backendUserIdProvider)!;
   final self = ref.watch(communitySelfProvider);
   final progress = ref.watch(studyProgressProvider);
@@ -214,7 +296,20 @@ Future<List<LeaderboardEntry>> _remoteBoard(
     now: now,
   );
   final withMembers = <LeaderboardEntry>[
-    ...base.current,
+    for (final entry in base.current)
+      if (friendsById.containsKey(entry.memberId))
+        LeaderboardEntry(
+          memberId: entry.memberId,
+          displayName: entry.displayName,
+          avatarId: entry.avatarId,
+          blobVariant: entry.blobVariant,
+          isSelf: false,
+          weekSeconds: entry.weekSeconds,
+          hasData: friendsById[entry.memberId]!.leaderboardOptIn,
+          rank: 0,
+          streakDays: entry.streakDays,
+          level: entry.level,
+        ),
     for (final f in friends)
       if (f.userId != selfId &&
           !base.current.any((e) => e.memberId == f.userId))
@@ -256,15 +351,39 @@ Future<List<LeaderboardEntry>> _localBoard(Ref ref, DateTime weekStart) async {
   return Leaderboard.rank(unordered: current, previousRanks: prevRanks);
 }
 
-/// Background trigger: uploads newly ended local sessions whenever the
-/// study list changes while signed in (kept alive by [StartupGate]).
+/// Background trigger: uploads newly saved closed intervals whenever the
+/// study list changes while signed in (kept alive for the app lifetime).
 /// Idempotent — retries and re-syncs never duplicate rows.
 final sessionSyncTriggerProvider = Provider<void>((ref) {
   if (!ref.watch(socialLiveProvider)) return;
-  final sessions = ref.watch(studyProgressProvider).sessions;
+  final sessions = ref.watch(
+    studyProgressProvider.select((state) => state.sessions),
+  );
   final remote = ref.watch(socialRemoteProvider);
   if (remote == null) return;
-  unawaited(_syncQuietly(ref, remote, sessions));
+  var disposed = false;
+  var retryDelay = const Duration(seconds: 15);
+  Timer? retryTimer;
+
+  Future<void> sync() async {
+    final succeeded = await _syncQuietly(ref, remote, sessions);
+    if (disposed) return;
+    retryTimer?.cancel();
+    if (succeeded) {
+      retryDelay = const Duration(seconds: 15);
+      return;
+    }
+    retryTimer = Timer(retryDelay, sync);
+    retryDelay = Duration(
+      seconds: (retryDelay.inSeconds * 2).clamp(15, 120).toInt(),
+    );
+  }
+
+  ref.onDispose(() {
+    disposed = true;
+    retryTimer?.cancel();
+  });
+  unawaited(sync());
 });
 
 /// Honest sync state for the UI: in-flight, unsynced backlog count, and
@@ -299,7 +418,7 @@ class SyncStatus {
 
 final syncStatusProvider = StateProvider<SyncStatus>((_) => const SyncStatus());
 
-Future<void> _syncQuietly(
+Future<bool> _syncQuietly(
   Ref ref,
   SocialRemote remote,
   List<StudySession> sessions,
@@ -310,40 +429,47 @@ Future<void> _syncQuietly(
     final pending = sessions
         .where((s) => s.checkOutTime != null && !synced.contains(s.id))
         .length;
+    final hasSavedIntervals = sessions.any(
+      (session) =>
+          session.studySegments.any((segment) => segment.endTime != null),
+    );
     notifier.state = notifier.state.copyWith(
-      syncing: pending > 0,
+      syncing: pending > 0 || hasSavedIntervals,
       pending: pending,
       lastError: null,
     );
-    if (pending == 0) return;
     final service = SessionSyncService(remote);
-    final before = (await service.syncedIds()).length;
-    await service.syncAll(sessions);
-    final after = (await service.syncedIds()).length;
-    if (after > before) {
+    final uploaded = await service.syncAll(sessions);
+    final after = await service.syncedIds();
+    if (uploaded > 0) {
       // New progress reached the server: refetch the friends board so the
       // uploader sees freshly shared friend numbers without a manual pull
       // (self is always live locally). Peers refresh via realtime; this
       // covers the syncing device itself.
       ref.invalidate(remoteFriendsBoardProvider);
     }
+    final remaining = sessions
+        .where((s) => s.checkOutTime != null && !after.contains(s.id))
+        .length;
     notifier.state = SyncStatus(
-      pending: pending - (after - before) < 0 ? 0 : pending - (after - before),
-      lastOk: DateTime.now(),
+      pending: remaining,
+      lastOk: uploaded > 0 ? DateTime.now() : notifier.state.lastOk,
     );
+    return true;
   } catch (error) {
-    // Offline or server error: keep the backlog visible; the next
-    // trigger retries automatically. Never fake success.
+    // Offline or server error: retain the backlog; the trigger retries with
+    // bounded backoff. Never fake success.
     final current = notifier.state;
     notifier.state = current.copyWith(
       syncing: false,
       lastError: error.toString(),
     );
+    return false;
   }
 }
 
-/// Pushes queued local sessions after sign-in (explicit guest migration:
-/// history uploads under the new account id; nothing is deleted).
+/// Pushes queued local sessions after sign-in: local history uploads under
+/// the authenticated account id; nothing is deleted.
 Future<String> syncAfterSignIn(WidgetRef ref) async {
   final remote = ref.read(socialRemoteProvider);
   if (remote == null) return 'Backend not connected.';

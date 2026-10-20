@@ -16,6 +16,8 @@ import 'package:studyup/features/profile/presentation/customise_robo_page.dart';
 import 'package:studyup/features/profile/presentation/setup_goal_screen.dart';
 import 'package:studyup/features/profile/presentation/setup_profile_screen.dart';
 import 'package:studyup/features/progress/presentation/study_progress_controller.dart';
+import 'package:studyup/features/auth/data/auth_controller.dart';
+import 'package:studyup/core/router/startup_gate.dart';
 
 Future<void> _waitForSettled(UserProfileController controller) async {
   for (var attempt = 0; attempt < 50; attempt++) {
@@ -70,7 +72,7 @@ void main() {
       });
       expect(done.slidesSeen, isTrue);
       expect(done.setupComplete, isTrue);
-      expect(done.demoSignedIn, isTrue);
+      expect(done.demoSignedIn, isFalse);
       expect(done.avatarId, 'avatar1');
 
       final fresh = UserProfile.fromJson({
@@ -124,13 +126,10 @@ void main() {
       expect(profile.setupComplete, isTrue);
       expect(profile.onboardingComplete, isTrue);
 
-      await controller.demoSignIn(email: 'alex@example.com');
+      await controller.linkAuthenticatedAccount(email: 'alex@example.com');
       profile = controller.state.valueOrNull!;
-      expect(profile.demoSignedIn, isTrue);
+      expect(profile.demoSignedIn, isFalse);
       expect(profile.demoEmail, 'alex@example.com');
-
-      await controller.demoSignOut();
-      expect(controller.state.valueOrNull!.demoSignedIn, isFalse);
 
       await expectLater(
         controller.saveSetupProgress(blobVariant: 4, displayName: 'Alex'),
@@ -280,6 +279,9 @@ void main() {
     testWidgets('8h default; 6h persists 360min and completes setup', (
       tester,
     ) async {
+      tester.view.physicalSize = const Size(360, 520);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final container = ProviderContainer();
       addTearDown(container.dispose);
       final router = GoRouter(
@@ -307,8 +309,20 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
 
       expect(find.text('Pick Your Daily Goal'), findsOneWidget);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 170);
+      await tester.pump();
+      await tester.scrollUntilVisible(
+        find.text('6h'),
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.tap(find.text('6h'));
       await tester.pump();
+      await tester.scrollUntilVisible(
+        find.text('Continue'),
+        180,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.tap(find.text('Continue'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
@@ -322,16 +336,14 @@ void main() {
     });
   });
 
-  group('Demo auth', () {
+  group('Authentication required', () {
     setUp(() {
       SharedPreferences.setMockInitialValues({
         'studyup.userProfile.v1': jsonEncode(_seedSetup),
       });
     });
 
-    testWidgets('invalid input blocks; valid login enters home', (
-      tester,
-    ) async {
+    testWidgets('missing backend never grants guest access', (tester) async {
       final container = ProviderContainer();
       addTearDown(container.dispose);
       final router = GoRouter(
@@ -355,39 +367,90 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      final fields = find.byType(TextFormField);
-      final loginButton = find.widgetWithText(FilledButton, 'Login');
-      await tester.enterText(fields.at(0), 'not-an-email');
-      await tester.enterText(fields.at(1), 'secret');
-      await tester.scrollUntilVisible(
-        loginButton,
-        200,
-        scrollable: find.byWidgetPredicate(
-          (w) => w is Scrollable && w.axis == Axis.vertical,
-        ),
+      expect(
+        find.textContaining('Offline guest access is not available.'),
+        findsOneWidget,
       );
-      await tester.pump();
-      await tester.tap(loginButton);
-      await tester.pump();
-      expect(find.text('Enter a valid email address.'), findsOneWidget);
-
-      await tester.enterText(fields.at(0), 'alex@example.com');
-      await tester.scrollUntilVisible(
-        loginButton,
-        200,
-        scrollable: find.byWidgetPredicate(
-          (w) => w is Scrollable && w.axis == Axis.vertical,
-        ),
+      expect(find.text('Continue without an account (offline)'), findsNothing);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Login'))
+            .onPressed,
+        isNull,
       );
-      await tester.pump();
-      await tester.tap(loginButton);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 600));
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(find.text('HOME'), findsOneWidget);
+      expect(find.text('HOME'), findsNothing);
       final profile = container.read(userProfileProvider).valueOrNull!;
-      expect(profile.demoSignedIn, isTrue);
-      expect(profile.demoEmail, 'alex@example.com');
+      expect(profile.demoSignedIn, isFalse);
+      expect(profile.demoEmail, isEmpty);
+    });
+
+    testWidgets('direct protected route redirects a signed-out user', (
+      tester,
+    ) async {
+      final router = GoRouter(
+        initialLocation: '/protected',
+        routes: [
+          GoRoute(
+            path: '/protected',
+            builder: (_, _) => const AuthenticatedRoute(
+              returnTo: '/protected',
+              child: Scaffold(body: Text('PROTECTED')),
+            ),
+          ),
+          GoRoute(path: '/auth', builder: (_, _) => const AuthScreen()),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authSettledProvider.overrideWith((ref) async => true),
+            backendUserIdProvider.overrideWithValue(null),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('PROTECTED'), findsNothing);
+      expect(find.text('Login'), findsWidgets);
+    });
+
+    testWidgets('restored authenticated session can open protected route', (
+      tester,
+    ) async {
+      final router = GoRouter(
+        initialLocation: '/protected',
+        routes: [
+          GoRoute(
+            path: '/protected',
+            builder: (_, _) => const AuthenticatedRoute(
+              returnTo: '/protected',
+              child: Scaffold(body: Text('PROTECTED')),
+            ),
+          ),
+          GoRoute(path: '/auth', builder: (_, _) => const AuthScreen()),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authSettledProvider.overrideWith((ref) async => true),
+            backendUserIdProvider.overrideWithValue('restored-user'),
+            localAccountDataAccessProvider.overrideWith(
+              (ref, userId) async => userId == 'restored-user',
+            ),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('PROTECTED'), findsOneWidget);
+      expect(find.text('Login'), findsNothing);
     });
 
     testWidgets('mode switch and placeholders respond', (tester) async {
@@ -424,19 +487,14 @@ void main() {
       expect(find.text('Sign Up'), findsWidgets);
 
       await tapVisible('Continue with Google');
+      expect(find.text('Continue with Google'), findsOneWidget);
       expect(
-        find.text('Google sign-in will be available later.'),
-        findsOneWidget,
-      );
-      // Dismiss directly: the floating snackbar sits below the 600px
-      // harness viewport, so drag/tap coordinates cannot reach it.
-      ScaffoldMessenger.of(tester.element(find.byType(AuthScreen)))
-          .hideCurrentSnackBar();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(
-        find.text('Google sign-in will be available later.'),
-        findsNothing,
+        tester
+            .widget<OutlinedButton>(
+              find.widgetWithText(OutlinedButton, 'Continue with Google'),
+            )
+            .onPressed,
+        isNull,
       );
 
       await tapVisible('Already have an account? Log in');

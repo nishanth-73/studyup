@@ -4,6 +4,14 @@ import 'package:studyup/core/notifications/notification_prefs.dart';
 import 'package:studyup/core/notifications/notification_service.dart';
 
 void main() {
+  test('notification initialization is safe and idempotent', () async {
+    SharedPreferences.setMockInitialValues({});
+    final service = NotificationService.instance;
+
+    await expectLater(service.init(), completes);
+    await expectLater(service.init(), completes);
+  });
+
   group('NotifRules.taskReminderFireTime', () {
     test('fires five minutes before the task starts', () {
       final fire = NotifRules.taskReminderFireTime(

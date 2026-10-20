@@ -15,6 +15,9 @@ Nothing here is auto-run by CI; record the results before release.
 -- In the Supabase SQL editor, run each file once, in order:
 --   supabase/migrations/20261015_community.sql
 --   supabase/migrations/20261102_social_backend.sql
+--   supabase/migrations/20261104_hardening_fix.sql
+--   supabase/migrations/20261112_friends_zero_progress.sql
+--   supabase/migrations/20261113_community_progress_realtime.sql
 -- Both are re-runnable (IF NOT EXISTS / OR REPLACE / policy drops).
 ```
 
@@ -92,8 +95,10 @@ reset role;
 ```sql
 -- Opt USER_B out (leaderboard_opt_in = false as USER_B), then as USER_A:
 select * from leaderboard_scope('friends', date_trunc('week', now()), date_trunc('week', now()) + interval '7 days');
--- Expect: USER_B absent.
--- scope='everyone' as USER_A: only opted-in strangers appear.
+-- Expect: USER_B remains listed but all progress aggregates are zero;
+-- opted-out progress is not returned.
+-- scope='everyone' as USER_A: ERROR "bad scope"; only accepted friends
+-- can read the Community board.
 -- scope='bogus' → ERROR "bad scope".
 ```
 
@@ -103,14 +108,30 @@ select * from leaderboard_scope('friends', date_trunc('week', now()), date_trunc
 -- Insert a session as USER_A, then session_days rows whose seconds do
 -- NOT sum to the segment total → ERROR "split mismatch".
 -- Rows for another user_id → ERROR "user mismatch".
+
+-- With USER_A opted out, USER_B cannot select USER_A's session_days and
+-- daily_rows(USER_A, ...) fails with "not permitted", even if accepted.
+-- After USER_A opts in and USER_A/USER_B are accepted friends, the daily
+-- aggregates are available to USER_B. An unrelated signed-in user cannot
+-- select USER_A's session_days or call daily_rows for USER_A, even when
+-- USER_A opted in. Raw study_sessions remain owner-only.
 ```
 
-## 9. Realtime publication
+## 9. Realtime publication and event visibility
 
 ```sql
 select tablename from pg_publication_tables where pubname = 'supabase_realtime';
--- Expect: friend_requests, invitations, community_profiles present.
--- session_days / study_sessions must NOT be listed (no broadcast).
+-- Expect: friend_requests, invitations, community_profiles, and
+-- community_progress_events present. session_days / study_sessions must
+-- NOT be listed.
+
+-- As USER_B, accepted friend of opted-in USER_A:
+select user_id from community_progress_events where user_id = 'USER_A';
+-- Expect: USER_A's metadata event row only (no session or seconds fields).
+
+-- As USER_B, accepted friend of opted-out USER_A:
+select user_id from community_progress_events where user_id = 'USER_A';
+-- Expect: zero rows. As anon, select from community_progress_events fails.
 ```
 
 ## 10. Cleanup

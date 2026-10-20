@@ -25,6 +25,9 @@ class _BoardRemote extends SocialRemote {
       'test-anon-key',
       // No auth auto-refresh timer inside widget-test fake async.
       authOptions: const AuthClientOptions(autoRefreshToken: false),
+      realtimeClientOptions: const RealtimeClientOptions(
+        disconnectOnEmptyChannelsAfter: Duration.zero,
+      ),
     ),
   );
 
@@ -33,6 +36,7 @@ class _BoardRemote extends SocialRemote {
   /// Accepted friends. `leaderboard_scope` only returns friends who studied
   /// in the queried week, so membership comes from this list.
   final friends = <RemoteFriend>[];
+  void Function()? progressChanged;
 
   @override
   Future<List<RemoteFriend>> myFriends() async => friends;
@@ -64,12 +68,32 @@ class _BoardRemote extends SocialRemote {
   ];
 
   @override
-  RealtimeChannel subscribeFriendships(void Function() onChange) =>
-      client.channel('test-friendships');
+  RealtimeChannel subscribeFriendships(
+    void Function() onChange, {
+    void Function(RealtimeSubscribeStatus status, Object? error)? onStatus,
+  }) {
+    onStatus?.call(RealtimeSubscribeStatus.subscribed, null);
+    return client.channel('test-friendships');
+  }
 
   @override
-  RealtimeChannel subscribeIncomingRequests(void Function() onChange) =>
-      client.channel('test-requests');
+  RealtimeChannel subscribeIncomingRequests(
+    void Function() onChange, {
+    void Function(RealtimeSubscribeStatus status, Object? error)? onStatus,
+  }) {
+    onStatus?.call(RealtimeSubscribeStatus.subscribed, null);
+    return client.channel('test-requests');
+  }
+
+  @override
+  RealtimeChannel subscribeProgressChanges(
+    void Function() onChange, {
+    void Function(RealtimeSubscribeStatus status, Object? error)? onStatus,
+  }) {
+    progressChanged = onChange;
+    onStatus?.call(RealtimeSubscribeStatus.subscribed, null);
+    return client.channel('test-progress');
+  }
 }
 
 class _InviteShareRemote extends _BoardRemote {
@@ -79,6 +103,9 @@ class _InviteShareRemote extends _BoardRemote {
           'https://example.supabase.co',
           'test-anon-key',
           authOptions: const AuthClientOptions(autoRefreshToken: false),
+          realtimeClientOptions: const RealtimeClientOptions(
+            disconnectOnEmptyChannelsAfter: Duration.zero,
+          ),
         ),
       );
 
@@ -101,6 +128,9 @@ class _FailingRemote extends _BoardRemote {
           'https://example.supabase.co',
           'test-anon-key',
           authOptions: const AuthClientOptions(autoRefreshToken: false),
+          realtimeClientOptions: const RealtimeClientOptions(
+            disconnectOnEmptyChannelsAfter: Duration.zero,
+          ),
         ),
       );
 
@@ -125,6 +155,9 @@ class _ZeroProgressRemote extends _BoardRemote {
           'https://example.supabase.co',
           'test-anon-key',
           authOptions: const AuthClientOptions(autoRefreshToken: false),
+          realtimeClientOptions: const RealtimeClientOptions(
+            disconnectOnEmptyChannelsAfter: Duration.zero,
+          ),
         ),
       ) {
     friends.add(
@@ -138,9 +171,25 @@ class _ZeroProgressRemote extends _BoardRemote {
     );
   }
 
+  int sharedSeconds = 0;
+
   @override
-  Future<List<RemoteBoardRow>> leaderboard({required DateTime weekStart}) async =>
-      const [];
+  Future<List<RemoteBoardRow>> leaderboard({
+    required DateTime weekStart,
+  }) async => sharedSeconds == 0
+      ? const []
+      : [
+          RemoteBoardRow(
+            userId: 'brother',
+            displayName: 'Brother',
+            avatarId: 'avatar1',
+            blobVariant: 1,
+            weekSeconds: sharedSeconds,
+            activeDays: 1,
+            totalSeconds: sharedSeconds,
+            streakDays: 1,
+          ),
+        ];
 }
 
 /// Regression tests for the Community tab:
@@ -218,18 +267,20 @@ void main() {
   ) async {
     await pumpCommunity(tester);
     expect(find.text('Community'), findsOneWidget);
-    expect(
-      find.text('Compete & grow together with your study crew'),
-      findsOneWidget,
-    );
+    expect(find.text('Grow together, win together.'), findsOneWidget);
     expect(find.textContaining('This Week'), findsOneWidget);
     expect(find.text('Top 3'), findsOneWidget);
     expect(find.text('You vs. Top Friend'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Leaderboard'), 300);
+    await tester.scrollUntilVisible(
+      find.text('Leaderboard'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Leaderboard'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Invite Friends & Start Competing'),
       300,
+      scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('Invite Friends & Start Competing'), findsOneWidget);
     // No rooms/challenges sections remain.
@@ -266,6 +317,7 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('Invite Friends & Start Competing'),
       300,
+      scrollable: find.byType(Scrollable).first,
     );
     await tester.tap(find.text('Invite Friends & Start Competing'));
     await tester.pumpAndSettle();
@@ -295,7 +347,11 @@ void main() {
 
   testWidgets('podium uses exact rank colors and demo tags', (tester) async {
     await pumpCommunity(tester);
-    await tester.scrollUntilVisible(find.text('Top 3'), 300);
+    await tester.scrollUntilVisible(
+      find.text('Top 3'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     // Rank blocks: #1 green, #2 orange, #3 blue — never swapped
     // (alpha tints ignored; RGB must match exactly).
     bool hasBlock(Color color) => find
@@ -378,6 +434,7 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('Invite Friends & Start Competing'),
       300,
+      scrollable: find.byType(Scrollable).first,
     );
     // The leaderboard is shorter now that the "Tip:" line is gone, so make
     // sure the button is actually on-screen before tapping it.
@@ -415,19 +472,33 @@ void main() {
     );
     expect(find.text('Community'), findsOneWidget);
     // 'Buddy' shares no week snapshot → listed unranked below the fold.
-    await tester.scrollUntilVisible(find.text('Buddy'), 500);
+    await tester.scrollUntilVisible(
+      find.text('Buddy'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Buddy'), findsWidgets);
   });
 
   testWidgets('live board is friends-only: no scope toggle, real rows', (
     tester,
   ) async {
+    final remote = _BoardRemote()
+      ..friends.add(
+        const RemoteFriend(
+          userId: 'f1',
+          displayName: 'Nova Friend',
+          avatarId: 'avatar1',
+          blobVariant: 1,
+          leaderboardOptIn: true,
+        ),
+      );
     await pumpCommunity(
       tester,
       overrides: [
         socialLiveProvider.overrideWithValue(true),
         backendUserIdProvider.overrideWithValue('me'),
-        socialRemoteProvider.overrideWithValue(_BoardRemote()),
+        socialRemoteProvider.overrideWithValue(remote),
       ],
     );
     // The Friends/Everyone scope toggle is gone: one friends-only board.
@@ -453,7 +524,11 @@ void main() {
     );
     // The accepted friend with zero study time / zero XP is on screen with
     // their real name — not missing, not faked.
-    await tester.scrollUntilVisible(find.text('Brother'), 400);
+    await tester.scrollUntilVisible(
+      find.text('Brother').last,
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Brother'), findsWidgets);
     // No exceptions from the podium/comparison with a single friend.
     expect(find.text('Top 3'), findsOneWidget);
@@ -476,7 +551,11 @@ void main() {
     // and no shared data (previously "no routes"/empty-rank edge cases).
     expect(find.text('Top 3'), findsOneWidget);
     expect(find.text('You vs. Top Friend'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Leaderboard'), 300);
+    await tester.scrollUntilVisible(
+      find.text('Leaderboard'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Leaderboard'), findsOneWidget);
     // Accepted friends live in the ONE leaderboard list — a friend with no
     // study time shows a genuine 0m, not a separate "waiting" card.
@@ -486,6 +565,34 @@ void main() {
     expect(tester.takeException(), isNull);
     // The removed instructional "Tip:" text must stay gone.
     expect(find.textContaining('Tip:'), findsNothing);
+  });
+
+  testWidgets('a shared progress event refreshes the open Community board', (
+    tester,
+  ) async {
+    final remote = _ZeroProgressRemote();
+    await pumpCommunity(
+      tester,
+      overrides: [
+        socialLiveProvider.overrideWithValue(true),
+        backendUserIdProvider.overrideWithValue('me'),
+        socialRemoteProvider.overrideWithValue(remote),
+      ],
+    );
+    await tester.scrollUntilVisible(
+      find.text('Leaderboard'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('0m'), findsWidgets);
+
+    remote.sharedSeconds = 1800;
+    remote.progressChanged?.call();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(find.text('30m'), findsWidgets);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a failed board query shows a retry state, never fake zeros', (
@@ -541,7 +648,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
 
     expect(find.text('Something went wrong'), findsNothing);
-    await tester.scrollUntilVisible(find.text('Leaderboard'), 300);
+    await tester.scrollUntilVisible(
+      find.text('Leaderboard'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Leaderboard'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -559,7 +670,11 @@ void main() {
         socialRemoteProvider.overrideWithValue(remote),
       ],
     );
-    await tester.scrollUntilVisible(find.text('Leaderboard'), 300);
+    await tester.scrollUntilVisible(
+      find.text('Leaderboard'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Brother'), findsNothing, reason: 'not friends yet');
 
     // The other phone accepts the invitation: the server now reports it.
@@ -584,7 +699,11 @@ void main() {
         socialRemoteProvider.overrideWithValue(remote),
       ],
     );
-    await tester.scrollUntilVisible(find.text('Brother'), 400);
+    await tester.scrollUntilVisible(
+      find.text('Brother').last,
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Brother'), findsWidgets);
     expect(tester.takeException(), isNull);
   });

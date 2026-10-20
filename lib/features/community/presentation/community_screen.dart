@@ -42,23 +42,28 @@ class CommunityScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final community = ref.watch(communityControllerProvider);
+    if (ref.watch(socialLiveProvider)) {
+      ref.watch(remoteRealtimeProvider);
+    }
 
     return AppShell(
       currentIndex: 3,
       body: SafeArea(
         bottom: false,
-        child: community.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => _chrome(
-            context,
-            ref,
-            CommunityError(
-              error: e,
-              onRetry: () =>
-                  ref.read(communityControllerProvider.notifier).refresh(),
+        child: _ResumeRefresh(
+          child: community.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => _chrome(
+              context,
+              ref,
+              CommunityError(
+                error: e,
+                onRetry: () =>
+                    ref.read(communityControllerProvider.notifier).refresh(),
+              ),
             ),
+            data: (data) => _homeBody(context, ref, data),
           ),
-          data: (data) => _homeBody(context, ref, data),
         ),
       ),
     );
@@ -90,7 +95,7 @@ class CommunityScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Compete & grow together with your study crew',
+              'Grow together, win together.',
               style: AppTextStyles.secondary14,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -132,9 +137,9 @@ class CommunityScreen extends ConsumerWidget {
         CommunityError(
           error: e,
           onRetry: () {
-            // Retry the actual server fetch (self is always local/live).
+            ref.invalidate(remoteFriendsProvider);
             ref.invalidate(remoteFriendsBoardProvider);
-            ref.read(communityControllerProvider.notifier).refresh();
+            ref.invalidate(communityDisplayProvider(weekStart));
           },
         ),
       ),
@@ -156,108 +161,105 @@ class CommunityScreen extends ConsumerWidget {
     final sync = ref.watch(syncStatusProvider);
     // Keep the leaderboard fresh: manual retry (errors above), week
     // changes (provider family), friend changes (realtime), and resume.
-    return _ResumeRefresh(
-      weekStart: weekStart,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-        children: [
-          _header(context, ref),
-          const SizedBox(height: 14),
-          _weekCaption(weekStart),
-          if (hasDemo) ...[
-            const SizedBox(height: 10),
-            CommunityCard(
-              child: Text(
-                'Preview with demo friends — marked DEMO. Real friends appear once the social backend connects; demo streaks/levels are illustrative.',
-                style: AppTextStyles.secondary14,
-              ),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      children: [
+        _header(context, ref),
+        const SizedBox(height: 14),
+        _weekCaption(weekStart),
+        if (hasDemo) ...[
+          const SizedBox(height: 10),
+          CommunityCard(
+            child: Text(
+              'Preview with demo friends — marked DEMO. Real friends appear once the social backend connects; demo streaks/levels are illustrative.',
+              style: AppTextStyles.secondary14,
             ),
-          ],
-          if (live) ...[
-            if (sync.syncing || sync.pending > 0) ...[
-              const SizedBox(height: 10),
-              CommunityCard(
-                child: Row(
-                  children: [
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Syncing ${sync.pending} session${sync.pending == 1 ? '' : 's'}… leaderboard updates when done.',
-                        style: AppTextStyles.secondary14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ] else if (sync.lastError != null) ...[
-              const SizedBox(height: 10),
-              CommunityCard(
-                child: Text(
-                  'Sync failed — your study data is safe on this device and will retry automatically.',
-                  style: AppTextStyles.secondary14,
-                ),
-              ),
-            ],
-          ],
-          if (!live && backendOn) ...[
+          ),
+        ],
+        if (live) ...[
+          if (sync.syncing || sync.pending > 0) ...[
             const SizedBox(height: 10),
             CommunityCard(
               child: Row(
                 children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'You\u2019re offline or signed out — showing local + demo data. Sign in to sync and compete for real.',
+                      'Syncing ${sync.pending} session${sync.pending == 1 ? '' : 's'}… leaderboard updates when done.',
                       style: AppTextStyles.secondary14,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  TextButton(
-                    onPressed: () => context.go('/auth'),
-                    child: Text(
-                      'Sign in',
-                      style: AppTextStyles.caption13.copyWith(
-                        color: AppColors.cta,
-                      ),
                     ),
                   ),
                 ],
               ),
             ),
+          ] else if (sync.lastError != null) ...[
+            const SizedBox(height: 10),
+            CommunityCard(
+              child: Text(
+                'Sync failed — your study data is safe on this device and will retry automatically.',
+                style: AppTextStyles.secondary14,
+              ),
+            ),
           ],
-          const SizedBox(height: 16),
-          Text('Top 3', style: AppTextStyles.section18),
-          const SizedBox(height: 8),
-          _podium(ranked),
-          const SizedBox(height: 16),
-          Text('You vs. Top Friend', style: AppTextStyles.section18),
-          const SizedBox(height: 8),
-          _comparison(entries),
-          const SizedBox(height: 16),
-          Text('Leaderboard', style: AppTextStyles.section18),
-          const SizedBox(height: 8),
-          _fullLeaderboard(entries),
-          const SizedBox(height: 16),
-          PrimaryButton(
-            label: 'Invite Friends & Start Competing',
-            onPressed: () => _invite(context, ref),
-            icon: const Icon(Icons.person_add, size: 18),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            ref.watch(socialLiveProvider)
-                ? 'Friends open your link, sign in, and tap Accept — nobody is added without accepting.'
-                : 'Friends join by entering your code — nobody is added without accepting.',
-            style: AppTextStyles.secondary12,
-            textAlign: TextAlign.center,
-          ),
-          SizedBox(height: AppShell.scrollClearance(context)),
         ],
-      ),
+        if (!live && backendOn) ...[
+          const SizedBox(height: 10),
+          CommunityCard(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'You\u2019re offline or signed out — showing local + demo data. Sign in to sync and compete for real.',
+                    style: AppTextStyles.secondary14,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                TextButton(
+                  onPressed: () => context.go('/auth'),
+                  child: Text(
+                    'Sign in',
+                    style: AppTextStyles.caption13.copyWith(
+                      color: AppColors.cta,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        Text('Top 3', style: AppTextStyles.section18),
+        const SizedBox(height: 8),
+        _podium(ranked),
+        const SizedBox(height: 16),
+        Text('You vs. Top Friend', style: AppTextStyles.section18),
+        const SizedBox(height: 8),
+        _comparison(entries),
+        const SizedBox(height: 16),
+        Text('Leaderboard', style: AppTextStyles.section18),
+        const SizedBox(height: 8),
+        _fullLeaderboard(entries),
+        const SizedBox(height: 16),
+        PrimaryButton(
+          label: 'Invite Friends & Start Competing',
+          onPressed: () => _invite(context, ref),
+          icon: const Icon(Icons.person_add, size: 18),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          ref.watch(socialLiveProvider)
+              ? 'Friends open your link, sign in, and tap Accept — nobody is added without accepting.'
+              : 'Friends join by entering your code — nobody is added without accepting.',
+          style: AppTextStyles.secondary12,
+          textAlign: TextAlign.center,
+        ),
+        SizedBox(height: AppShell.scrollClearance(context)),
+      ],
     );
   }
 
@@ -787,10 +789,9 @@ class CommunityScreen extends ConsumerWidget {
 /// well as statistics is what makes a newly accepted friend appear without
 /// an app restart. Cleanup on dispose.
 class _ResumeRefresh extends ConsumerStatefulWidget {
-  final DateTime weekStart;
   final Widget child;
 
-  const _ResumeRefresh({required this.weekStart, required this.child});
+  const _ResumeRefresh({required this.child});
 
   @override
   ConsumerState<_ResumeRefresh> createState() => _ResumeRefreshState();
@@ -810,11 +811,6 @@ class _ResumeRefreshState extends ConsumerState<_ResumeRefresh>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Entering the Community tab always re-reads the accepted friends, so a
-    // friend who accepted while the user was elsewhere shows up here.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _refresh();
-    });
   }
 
   @override

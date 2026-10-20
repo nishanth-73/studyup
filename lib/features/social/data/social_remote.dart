@@ -182,7 +182,7 @@ bool _looksLikeServerInviteToken(String s) =>
 
 /// Splits one session's segments into per-local-day buckets for the
 /// session_days table: [{day: 'yyyy-MM-dd', dayStartUtc, seconds}].
-/// Only closed segments count (active sessions sync on checkout).
+/// Only closed intervals count; a paused session can sync its saved time.
 List<Map<String, Object?>> splitSessionDays(StudySession session) {
   final out = <String, Map<String, Object?>>{};
   for (final seg in session.studySegments) {
@@ -406,7 +406,6 @@ class SocialRemote {
   /// Idempotent session upload: stable local ids are the PK, so retries
   /// and re-syncs never duplicate rows.
   Future<void> upsertSession(StudySession session) async {
-    if (session.checkOutTime == null) return; // active: syncs on checkout.
     final segments = [
       for (final s in session.studySegments)
         if (s.endTime != null)
@@ -422,7 +421,7 @@ class SocialRemote {
       'subject_id': session.subjectId,
       'subject_name': session.subjectName,
       'check_in': session.checkInTime.toUtc().toIso8601String(),
-      'check_out': session.checkOutTime!.toUtc().toIso8601String(),
+      'check_out': session.checkOutTime?.toUtc().toIso8601String(),
       'paused_seconds': session.pausedSeconds,
       'segments': segments,
       'updated_at': DateTime.now().toUtc().toIso8601String(),
@@ -482,7 +481,10 @@ class SocialRemote {
   }
 
   /// Realtime: refresh UI when my incoming requests change.
-  RealtimeChannel subscribeIncomingRequests(void Function() onChange) {
+  RealtimeChannel subscribeIncomingRequests(
+    void Function() onChange, {
+    void Function(RealtimeSubscribeStatus status, Object? error)? onStatus,
+  }) {
     final channel = _client.channel('incoming-requests');
     channel
         .onPostgresChanges(
@@ -491,14 +493,17 @@ class SocialRemote {
           table: 'friend_requests',
           callback: (_) => onChange(),
         )
-        .subscribe();
+        .subscribe(onStatus);
     return channel;
   }
 
   /// Realtime: refresh UI when my friendships change (accept elsewhere,
   /// removal). RLS scopes rows to involved users; the callback carries
   /// no payload, only a refresh signal.
-  RealtimeChannel subscribeFriendships(void Function() onChange) {
+  RealtimeChannel subscribeFriendships(
+    void Function() onChange, {
+    void Function(RealtimeSubscribeStatus status, Object? error)? onStatus,
+  }) {
     final channel = _client.channel('my-friendships');
     channel
         .onPostgresChanges(
@@ -507,7 +512,26 @@ class SocialRemote {
           table: 'friendships',
           callback: (_) => onChange(),
         )
-        .subscribe();
+        .subscribe(onStatus);
+    return channel;
+  }
+
+  /// Realtime carries only a per-user invalidation timestamp. The event
+  /// table's RLS allows reads for accepted friends only when the owner has
+  /// enabled leaderboard sharing; raw sessions and day rows are not sent.
+  RealtimeChannel subscribeProgressChanges(
+    void Function() onChange, {
+    void Function(RealtimeSubscribeStatus status, Object? error)? onStatus,
+  }) {
+    final channel = _client.channel('shared-progress');
+    channel
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'community_progress_events',
+          callback: (_) => onChange(),
+        )
+        .subscribe(onStatus);
     return channel;
   }
 }

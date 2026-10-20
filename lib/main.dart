@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/backend/feedback_config.dart';
@@ -19,9 +20,14 @@ void main() async {
   // Startup itself must never fail: even if device storage or the
   // notification plugin is broken, the app still launches and studies.
   try {
-    await NotificationService.instance.init();
-  } catch (_) {
-    // Intentionally silent: timer/screens work without notifications.
+    await NotificationService.instance.init().timeout(
+      const Duration(seconds: 5),
+    );
+  } catch (error, stackTrace) {
+    debugPrint(
+      '[notifications] initialization failed; continuing without OS alerts: '
+      '$error\n$stackTrace',
+    );
   }
   // Local `.env` fallback for SUPABASE_URL / SUPABASE_ANON_KEY
   // (dart-defines still win). Absent or unreadable file = offline mode.

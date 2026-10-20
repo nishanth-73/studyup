@@ -64,9 +64,7 @@ void main() {
     expect(parseInviteToken(uri), _code);
     // Trailing slash and the /invite/ alias are the same link.
     expect(
-      parseInviteToken(
-        Uri.parse('https://studyup-4x7z.vercel.app/i/$_code/'),
-      ),
+      parseInviteToken(Uri.parse('https://studyup-4x7z.vercel.app/i/$_code/')),
       _code,
     );
     expect(
@@ -78,7 +76,10 @@ void main() {
     // Custom-scheme fallback still works with no hosting.
     expect(parseInviteToken(Uri.parse('studyup://invite/$_code')), _code);
     // A non-invitation link is not an invitation.
-    expect(parseInviteToken(Uri.parse('https://studyup-4x7z.vercel.app/')), isNull);
+    expect(
+      parseInviteToken(Uri.parse('https://studyup-4x7z.vercel.app/')),
+      isNull,
+    );
   });
 
   testWidgets('cold start from an invitation link resumes it, never Home', (
@@ -98,6 +99,10 @@ void main() {
         overrides: [
           backendLiveProvider.overrideWithValue(true),
           backendUserIdProvider.overrideWithValue('me'),
+          authSettledProvider.overrideWith((ref) async => true),
+          localAccountDataAccessProvider.overrideWith(
+            (ref, userId) async => userId == 'me',
+          ),
           socialRemoteProvider.overrideWithValue(null),
           inviteRemoteProvider.overrideWithValue(remote),
           // Keep the gate hermetic: no background sync/link work here.
@@ -120,8 +125,8 @@ void main() {
     // name, the code's preview, and the two explicit actions.
     expect(find.byType(InviteAcceptScreen), findsOneWidget);
     expect(find.textContaining('invited you to join StudyUp'), findsOneWidget);
-    expect(find.text('Accept invitation'), findsOneWidget);
     expect(find.text('Decline'), findsOneWidget);
+    expect(find.text('Accept invitation'), findsOneWidget);
     expect(find.textContaining('GoException'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -141,6 +146,10 @@ void main() {
         overrides: [
           backendLiveProvider.overrideWithValue(true),
           backendUserIdProvider.overrideWithValue('me'),
+          authSettledProvider.overrideWith((ref) async => true),
+          localAccountDataAccessProvider.overrideWith(
+            (ref, userId) async => userId == 'me',
+          ),
           socialRemoteProvider.overrideWithValue(null),
           inviteRemoteProvider.overrideWithValue(remote),
           sessionSyncTriggerProvider.overrideWith((ref) {}),
@@ -153,7 +162,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Accept invitation'), findsOneWidget);
+    expect(find.byType(InviteAcceptScreen), findsOneWidget);
     expect(remote.acceptCalls, isEmpty);
     expect(tester.takeException(), isNull);
   });

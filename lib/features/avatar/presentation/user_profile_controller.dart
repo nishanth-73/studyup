@@ -57,7 +57,7 @@ class UserProfileController extends StateNotifier<AsyncValue<UserProfile?>> {
         onboardingComplete: true,
         slidesSeen: true,
         setupComplete: true,
-        demoSignedIn: true,
+        demoSignedIn: false,
       ),
     );
   }
@@ -125,8 +125,8 @@ class UserProfileController extends StateNotifier<AsyncValue<UserProfile?>> {
     );
   }
 
-  /// Goal step finished: the whole first-launch setup is done. The demo
-  /// auth screen still follows (see [demoSignIn]).
+  /// Goal step finished: the whole first-launch setup is done. Real
+  /// authentication is still required before protected app routes.
   Future<void> completeSetup() async {
     final current = state.valueOrNull;
     if (current == null) throw StateError('No user profile exists yet.');
@@ -142,22 +142,14 @@ class UserProfileController extends StateNotifier<AsyncValue<UserProfile?>> {
     );
   }
 
-  /// Temporary local demo access (NO backend, NO password storage).
-  /// Records only the email as an identifier; the password is never
-  /// persisted. Replace with Supabase session handling later.
-  Future<void> demoSignIn({required String email}) async {
+  /// Saves the authenticated account email for local identity display.
+  /// Authentication is established and verified by Supabase, never here.
+  Future<void> linkAuthenticatedAccount({required String email}) async {
     final current = state.valueOrNull;
     if (current == null) throw StateError('No user profile exists yet.');
     final address = email.trim();
     if (address.isEmpty) throw ArgumentError('Email must not be empty.');
-    await _save(current.copyWith(demoSignedIn: true, demoEmail: address));
-  }
-
-  /// Drops local demo access (used by tests; no UI wired yet).
-  Future<void> demoSignOut() async {
-    final current = state.valueOrNull;
-    if (current == null) throw StateError('No user profile exists yet.');
-    await _save(current.copyWith(demoSignedIn: false));
+    await _save(current.copyWith(demoSignedIn: false, demoEmail: address));
   }
 
   /// Rename without touching anything else.

@@ -20,7 +20,6 @@ import '../data/app_metadata.dart';
 import '../data/study_gamification.dart';
 import 'study_progress_controller.dart';
 import 'streak_level_summary.dart';
-import '../../svg_art/presentation/svg_art.dart';
 
 String _fmtDur(int minutes) {
   if (minutes < 60) return '${minutes}m';
@@ -36,6 +35,113 @@ DateTime _monday(DateTime day) {
   return d.subtract(Duration(days: d.weekday - 1));
 }
 
+int _trackedSecondsForDate(
+  List<StudySession> sessions,
+  DateTime date,
+  DateTime now,
+) {
+  final start = DateTime(date.year, date.month, date.day);
+  final end = start.add(const Duration(days: 1));
+  return sessions.fold(
+    0,
+    (seconds, session) => seconds + session.secondsInRange(start, end, now),
+  );
+}
+
+double _cappedGoalProgress(int trackedSeconds, int goalMinutes) {
+  final goalSeconds = goalMinutes * 60;
+  if (goalSeconds <= 0) return 0;
+  return (trackedSeconds / goalSeconds).clamp(0.0, 1.0);
+}
+
+class _TodayGoalProgressRing extends StatefulWidget {
+  final int trackedSeconds;
+  final int goalMinutes;
+  final DateTime selectedDate;
+  final List<StudySession> sessionsRevision;
+
+  const _TodayGoalProgressRing({
+    required this.trackedSeconds,
+    required this.goalMinutes,
+    required this.selectedDate,
+    required this.sessionsRevision,
+  });
+
+  @override
+  State<_TodayGoalProgressRing> createState() => _TodayGoalProgressRingState();
+}
+
+class _TodayGoalProgressRingState extends State<_TodayGoalProgressRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entrance;
+
+  @override
+  void initState() {
+    super.initState();
+    _entrance = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 750),
+    )..forward();
+  }
+
+  @override
+  void didUpdateWidget(_TodayGoalProgressRing oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final dateChanged =
+        oldWidget.selectedDate.year != widget.selectedDate.year ||
+        oldWidget.selectedDate.month != widget.selectedDate.month ||
+        oldWidget.selectedDate.day != widget.selectedDate.day;
+    if (dateChanged ||
+        oldWidget.goalMinutes != widget.goalMinutes ||
+        !identical(oldWidget.sessionsRevision, widget.sessionsRevision)) {
+      _entrance.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _entrance.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = _cappedGoalProgress(
+      widget.trackedSeconds,
+      widget.goalMinutes,
+    );
+    return SizedBox(
+      key: const ValueKey('today-session-goal-ring-container'),
+      width: 152,
+      height: 152,
+      child: AnimatedBuilder(
+        animation: _entrance,
+        builder: (context, _) {
+          final visibleProgress = progress * _entrance.value;
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              CircularProgressIndicator(
+                key: const ValueKey('today-session-goal-ring'),
+                value: visibleProgress,
+                strokeWidth: 8,
+                backgroundColor: AppColors.track,
+                valueColor: const AlwaysStoppedAnimation<Color>(AppColors.cta),
+              ),
+              Text(
+                '${(visibleProgress * 100).round()}%',
+                style: AppTextStyles.section18,
+                semanticsLabel:
+                    '${(progress * 100).round()} percent of daily goal',
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 class ProgressScreen extends ConsumerStatefulWidget {
   const ProgressScreen({super.key});
   @override
@@ -47,10 +153,6 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   final GlobalKey _monthlyChartCardKey = GlobalKey();
   bool _monthlyChartVisible = false;
   bool _visibilityCheckScheduled = false;
-
-  // Today's Session artwork loop: play while running, rest frame otherwise.
-  final SvgArtController _sessionArt = SvgArtController();
-  bool _sessionArtRunning = false;
 
   late DateTime _today;
   late DateTime _weeklyChartDate;
@@ -92,7 +194,6 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   @override
   void dispose() {
     _dayWatch?.cancel();
-    _sessionArt.dispose();
     super.dispose();
   }
 
@@ -303,22 +404,14 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     final dayEnd = dayStart.add(const Duration(days: 1));
     final completed = progress.minutesForDate(_today, now: now);
     final goalMinutes = progress.dailyStudyGoalMinutes;
+    final trackedSeconds = _trackedSecondsForDate(
+      progress.sessions,
+      _today,
+      now,
+    );
     final checkedIn = activeSession != null;
     final isPaused = activeSession?.isPaused ?? false;
-    // Running loop <=> active and not paused. Pause/idle rest at frame 0;
-    // resume restarts from the beginning (SvgArtController.play()).
     final running = checkedIn && !isPaused;
-    if (running != _sessionArtRunning) {
-      _sessionArtRunning = running;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (running) {
-          _sessionArt.play();
-        } else {
-          _sessionArt.showRest();
-        }
-      });
-    }
     StudySession? latestTodaySession;
     for (final session in progress.sessions) {
       final sessionEnd = session.checkOutTime ?? now;
@@ -403,14 +496,11 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                SizedBox(
-                  width: 152,
-                  height: 152,
-                  child: SvgArt(
-                    asset: 'assets/images/today_session.svg',
-                    controller: _sessionArt,
-                    autoplay: running,
-                  ),
+                _TodayGoalProgressRing(
+                  trackedSeconds: trackedSeconds,
+                  goalMinutes: goalMinutes,
+                  selectedDate: _today,
+                  sessionsRevision: progress.sessions,
                 ),
               ],
             ),

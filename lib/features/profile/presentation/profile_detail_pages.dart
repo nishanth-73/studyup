@@ -18,7 +18,6 @@ import '../../../core/widgets/app_shell.dart';
 import '../../../core/widgets/ui_kit.dart';
 import '../../avatar/presentation/user_profile_controller.dart';
 import '../../auth/data/auth_controller.dart';
-import '../../auth/presentation/auth_screen.dart';
 import '../../community/presentation/community_controller.dart';
 import '../../home/presentation/home_controller.dart';
 import '../../profile/data/feedback_service.dart';
@@ -394,31 +393,28 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
   }
 
   Future<void> _signOut() async {
-    final profile = ref.read(userProfileProvider).valueOrNull;
-    if (profile == null) {
-      _say('No profile is signed in on this device.');
+    if (!ref.read(backendLiveProvider)) {
+      _say(
+        'Sign-out is unavailable because the authentication backend is disconnected.',
+      );
       return;
     }
-    final backendLive = ref.read(backendLiveProvider);
     final signedIn = ref.read(backendUserIdProvider) != null;
     final ok = await _confirm(
-      signedIn ? 'Sign out?' : 'End demo access?',
+      'Sign out?',
       signedIn
           ? 'Sign out of your account on this device? You may need to sign '
                 'in again to access your account.'
-          : 'End demo access on this device? Your saved study data stays '
-                'on this device.',
-      signedIn ? 'Sign Out' : 'End Demo',
+          : 'Clear the saved sign-in session on this device?',
+      'Sign Out',
     );
     if (!ok || !mounted) return;
     setState(() => _busy = true);
     try {
-      if (backendLive) {
-        await ref.read(authRepositoryProvider)?.signOut();
-        await AuthScreen.clearOfflineMode();
-        await clearPostSignInLink();
-      }
-      await ref.read(userProfileProvider.notifier).demoSignOut();
+      final auth = ref.read(authRepositoryProvider);
+      if (auth == null) throw StateError('Authentication is unavailable.');
+      await auth.signOut();
+      await clearPostSignInLink();
       if (mounted) context.go('/auth');
     } catch (_) {
       _say('Could not sign out. Please try again.');
@@ -524,8 +520,8 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
     final accountLine = signedIn
         ? 'Signed in${email != null && email.isNotEmpty ? ' as $email' : ''}.'
         : backendOn
-        ? 'No account on this device — offline or demo access.'
-        : 'Demo access — no account in this build.';
+        ? 'No active account on this device. Sign in to use protected features.'
+        : 'Authentication backend unavailable. Protected features cannot be used.';
 
     Widget stat(String label, String value) {
       return Padding(
@@ -582,16 +578,16 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
               line(
                 signedIn
                     ? 'While you are signed in, your profile, friends and '
-                          'finished study sessions sync to an online database '
+                          'saved study intervals sync to an online database '
                           'so they follow your account. Only you can read or '
                           'change your synced records; friends see only the '
                           'totals you choose to share.'
                     : backendOn
                     ? 'Nothing is uploaded while you are signed out. Sign in '
                           'to sync your profile, friends and finished study '
-                          'sessions to your account.'
-                    : 'This build has no account connection, so nothing '
-                          'leaves this device.',
+                          'saved study intervals to your account.'
+                    : 'This build has no account connection; sign-in is '
+                          'required before protected data is available.',
               ),
               line(
                 'Attached files (PDFs and images) always stay on this '
@@ -604,14 +600,10 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
         ),
         DetailRow(
           icon: Icons.logout_outlined,
-          title: signedIn
-              ? 'Sign out'
-              : backendOn
-              ? 'Sign out of demo access'
-              : 'Exit demo',
+          title: 'Sign out',
           subtitle: signedIn
               ? 'Signs out on this device; your data stays saved'
-              : 'Keeps your data, ends demo access',
+              : 'Clear the saved sign-in session on this device',
           onTap: _busy ? () {} : _signOut,
         ),
         DetailRow(

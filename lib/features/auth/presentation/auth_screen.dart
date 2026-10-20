@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/deeplink/invite_links.dart';
 import '../../../core/theme/app_colors.dart';
@@ -19,24 +18,14 @@ import '../data/auth_repository.dart';
 /// access lapses). Card structure mirrors the shadcn CardDemo
 /// reference; styling is StudyUp dark theme.
 ///
-/// Two modes, chosen automatically:
 /// - Backend connected: real Supabase email/password auth with email
 ///   verification, password reset, and session persistence. On success
 ///   the local profile links to the account and local study history
 ///   syncs (nothing local is deleted).
-/// - Backend missing: explicit offline demo access via
-///   [UserProfileController.demoSignIn] (no remote account, password
-///   never stored). The banner says so — never faked as real auth.
+/// A real Supabase session is required before protected app routes.
 class AuthScreen extends ConsumerStatefulWidget {
-  const AuthScreen({super.key});
-
-  /// Clears the "continue without account" choice (used on sign-out).
-  static Future<void> clearOfflineMode() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_offlineKey);
-  }
-
-  static const _offlineKey = 'studyup.offlineMode.v1';
+  final String? returnTo;
+  const AuthScreen({super.key, this.returnTo});
 
   @override
   ConsumerState<AuthScreen> createState() => _AuthScreenState();
@@ -79,15 +68,17 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   Future<void> _submit() async {
     if (_busy) return;
+    final repo = _repo;
+    if (repo == null) {
+      _say(
+        'Sign-in is unavailable. Connect the app to its authentication backend and try again.',
+      );
+      return;
+    }
     FocusScope.of(context).unfocus();
     if (!(_form.currentState?.validate() ?? false)) return;
     setState(() => _busy = true);
     try {
-      final repo = _repo;
-      if (repo == null) {
-        await _demoAccess();
-        return;
-      }
       final result = _signup
           ? await repo.signUp(email: _email.text, password: _password.text)
           : await repo.signIn(email: _email.text, password: _password.text);
@@ -111,27 +102,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     }
   }
 
-  /// Local demo access (offline / backend missing). Records only the
-  /// email identifier; the password is never persisted.
-  Future<void> _demoAccess() async {
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    var profile = ref.read(userProfileProvider);
-    for (var i = 0; i < 100 && profile.isLoading; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      if (!mounted) return;
-      profile = ref.read(userProfileProvider);
-    }
-    try {
-      await ref
-          .read(userProfileProvider.notifier)
-          .demoSignIn(email: _email.text);
-    } catch (error) {
-      if (mounted) _say('Could not sign in locally: $error');
-      return;
-    }
-    if (mounted) context.go('/home');
-  }
-
   /// Post-auth linking: attach the local profile to the account, sync
   /// local history (idempotent, nothing deleted), then resume a pending
   /// invitation if one is waiting.
@@ -145,24 +115,40 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           avatarId: local.avatarId,
           blobVariant: local.blobVariant,
         );
-      } catch (_) {}
+      } catch (error) {
+        debugPrint('[auth] profile sync failed after sign-in: $error');
+      }
       try {
         final sessions = ref.read(studyProgressProvider).sessions;
         await SessionSyncService(SocialRemote(repo.client)).syncAll(sessions);
-      } catch (_) {}
+      } catch (error) {
+        debugPrint('[auth] session sync will retry after sign-in: $error');
+      }
     }
     try {
-      await ref.read(userProfileProvider.notifier).demoSignIn(email: email);
-    } catch (_) {}
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(AuthScreen._offlineKey);
+      await ref
+          .read(userProfileProvider.notifier)
+          .linkAuthenticatedAccount(email: email);
+    } catch (error) {
+      debugPrint('[auth] local account link failed after sign-in: $error');
+    }
     final pending = await InviteLinks.takePending();
     if (!mounted) return;
     if (pending != null && pending.isNotEmpty) {
       context.go('/invite/${Uri.encodeComponent(pending)}');
+    } else if (_safeReturnPath(widget.returnTo) != null) {
+      context.go(_safeReturnPath(widget.returnTo)!);
     } else {
       context.go('/home');
     }
+  }
+
+  String? _safeReturnPath(String? path) {
+    if (path == null || !path.startsWith('/') || path.startsWith('//')) {
+      return null;
+    }
+    if (path == '/auth' || path.startsWith('/auth?')) return null;
+    return path;
   }
 
   Future<void> _forgotPassword() async {
@@ -196,14 +182,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  Future<void> _continueOffline() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(AuthScreen._offlineKey, true);
-    if (!mounted) return;
-    // Offline keeps every local feature; social shows a setup banner.
-    context.go('/home');
   }
 
   /// Google OAuth: launches the system browser; Supabase redirects to
@@ -291,7 +269,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              'Backend not connected — demo access only. No account is created.',
+                              'Sign-in requires a configured StudyUp authentication backend and an internet connection. Offline guest access is not available.',
                               style: AppTextStyles.caption12,
                             ),
                           ),
@@ -384,7 +362,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         const SizedBox(height: 10),
                         PrimaryButton(
                           label: action,
-                          onPressed: _busy ? null : _submit,
+                          onPressed: _busy || !backendLive ? null : _submit,
                           icon: _busy
                               ? const SizedBox(
                                   width: 18,
@@ -436,25 +414,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                     ),
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          TextButton(
-                            onPressed: _busy ? null : _continueOffline,
-                            child: Text(
-                              'Continue without an account (offline)',
-                              style: AppTextStyles.body14.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ),
                         ] else ...[
                           const SizedBox(height: 12),
                           SizedBox(
                             width: double.infinity,
                             height: 56,
                             child: OutlinedButton(
-                              onPressed: () => _say(
-                                'Google sign-in will be available later.',
-                              ),
+                              onPressed: null,
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: AppColors.textPrimary,
                                 side: const BorderSide(color: AppColors.track),

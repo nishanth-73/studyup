@@ -1,36 +1,41 @@
 # StudyUp Supabase backend — connect, configure, verify
 
 The Flutter app ships with the **complete social backend integration**:
-client, auth, migrations, RLS, invitation links, session sync, and the
-Community UI all read from Supabase when credentials are provided, and
-fall back to explicit offline/demo mode when they are not. No secrets
-are committed; the service-role key is never in the app.
+client, required authentication, migrations, RLS, invitation links,
+session sync, and the Community UI read from Supabase. Offline guest
+access is not available; a configured backend and network are required
+to enter protected app features. No service-role key is shipped in the
+app.
 
 ## A. What is implemented and locally tested
 
 - `lib/core/backend/` — `supabase_config.dart` (dart-define config, no
-  hardcoding) + `supabase_client.dart` (single client, graceful offline
-  init). Missing credentials → app runs fully offline, social screens
-  show setup banners. Nothing crashes, nothing fakes success.
+  hardcoding) + `supabase_client.dart` (single client, graceful startup
+  when configuration is missing). Authentication and protected features
+  require a configured backend and network; local data is not uploaded
+  without an authenticated account. Nothing fakes successful sign-in.
 - `lib/features/auth/` — real email/password auth (`AuthRepository`,
   `auth_controller.dart`): sign up, sign in, email verification +
   resend, password reset, sign out, session restore, auth-state stream.
-  `AuthScreen` uses Supabase when configured, demo access otherwise
-  (explicitly labeled). `StartupGate` requires a session when the
-  backend is configured (with an explicit "continue offline" choice).
-  Sign-in links the local profile, syncs local history idempotently,
-  and resumes pending invite tokens.
+  Protected routes require a restored Supabase session and account-owned
+  local data. Sign-in syncs local history idempotently and resumes pending
+  invite tokens.
 - `supabase/migrations/20261015_community.sql` — existing tables/policies
   (friends, requests, rooms, challenges, presence).
-- `supabase/migrations/20261102_social_backend.sql` — NEW: profile
+- `supabase/migrations/20261102_social_backend.sql` — profile
   auto-create trigger, `invitations` (hash-only tokens), hardened
   request-transition triggers, friendship materialization,
   `study_sessions` + validated `session_days`, `leaderboard_scope`,
   `daily_rows`, `my_friends`, `search_users`, `create/accept/preview`
   invitation RPCs, realtime publication entries. Repeatable, no resets.
+- `supabase/migrations/20261113_community_progress_realtime.sql` —
+  accepted-friend-only, opt-in-aware aggregate access and a metadata-only
+  progress event table for friend-scoped realtime invalidation. Raw study
+  sessions and per-session day rows are never published.
 - `lib/features/social/` — `SocialRemote` (all Supabase queries),
-  `SessionSyncService` (idempotent upload, offline-first), providers
-  (live gating, realtime request subscription, background sync trigger).
+  `SessionSyncService` (idempotent upload, local persistence remains
+  authoritative), providers (live gating, friend-scoped realtime
+  invalidation, lifecycle refresh, and retry fallback).
 - Community — live server leaderboard (friends scope of
   `leaderboard_scope`), podium/comparison/rows from one ranking; demo
   fixtures only offline.
@@ -99,8 +104,11 @@ are committed; the service-role key is never in the app.
       com.studyup.studyup://login-callback/)`, so no extra Android
       config is needed beyond the intent-filter already present.
 4. SQL editor → run `supabase/migrations/20261015_community.sql`,
-   then `supabase/migrations/20261102_social_backend.sql`, then
-   `supabase/migrations/20261104_hardening_fix.sql`, in that order.
+   `supabase/migrations/20261102_social_backend.sql`,
+   `supabase/migrations/20261104_hardening_fix.sql`,
+   `supabase/migrations/20261112_friends_zero_progress.sql`, and
+   `supabase/migrations/20261113_community_progress_realtime.sql`, in
+   that order.
    The third file is **required**: without it
    `invitation_preview`/`accept_invitation` fail with
    `"function digest(text, unknown) does not exist"`, so the whole
@@ -117,8 +125,9 @@ are committed; the service-role key is never in the app.
 6. Sign up in the app → tap the link in the verification email (it
    reopens StudyUp via the callback above) → log in, or use Continue
    with Google (browser → back to the app automatically). Local history
-   syncs automatically (idempotent). Community switches from demo to
-   live data; Friends shows server friends/requests.
+   syncs automatically (idempotent). Community uses server-backed friend
+   totals. If Supabase credentials or network access are unavailable,
+   authentication and protected features cannot be used.
 7. Work through `supabase/tests/verify_rls.md` and record results.
 
 `.env.example` documents the variables; `.env*` is git-ignored.

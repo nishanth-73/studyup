@@ -20,7 +20,9 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('returning user opens Home directly', (tester) async {
+  testWidgets('returning setup user must sign in before protected features', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({
       'studyup.userProfile.v1': '{"ownerId":"local","displayName":"Alex","blobName":"alex","onboardingComplete":true,"avatarId":"avatar1","slidesSeen":true,"setupComplete":true,"demoSignedIn":true,"demoEmail":""}',
       'studyup.tasks.starterSeeded.v1': true,
@@ -30,9 +32,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // Home header shows the saved name; no splash, no onboarding.
-    expect(find.text('Alex'), findsOneWidget);
+    // Setup remains saved, but a local legacy demo flag cannot bypass auth.
+    expect(
+      find.textContaining('Offline guest access is not available.'),
+      findsOneWidget,
+    );
     expect(find.text('Track Your Progress'), findsNothing);
+    expect(find.text('Home'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
