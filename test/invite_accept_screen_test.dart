@@ -44,8 +44,8 @@ class _FakeRemote extends SocialRemote {
        );
 
   final InvitePreview preview;
-  final Object? previewError;
-  final Object? acceptError;
+  Object? previewError;
+  Object? acceptError;
   final previewCalls = <String>[];
   final acceptCalls = <String>[];
 
@@ -153,10 +153,38 @@ void main() {
     final remote = _FakeRemote(previewError: Exception('network down'));
     await pumpScreen(tester, remote: remote);
     expect(
-      find.text('Could not load this invitation. Check your connection.'),
+      find.text(
+        'Could not verify this invitation with StudyUp. Check your connection, then retry.',
+      ),
       findsOneWidget,
     );
+    expect(find.text('Retry'), findsOneWidget);
     expect(remote.acceptCalls, isEmpty);
+
+    remote.previewError = null;
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    expect(find.text('Accept invitation'), findsOneWidget);
+    expect(remote.previewCalls, hasLength(2));
+  });
+
+  testWidgets('transient accept failure offers a retry', (tester) async {
+    final remote = _FakeRemote(acceptError: Exception('network down'));
+    await pumpScreen(tester, remote: remote);
+
+    await tester.tap(find.text('Accept invitation'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('No connection. Retry when you are back online.'),
+      findsOneWidget,
+    );
+    expect(find.text('Retry acceptance'), findsOneWidget);
+
+    remote.acceptError = null;
+    await tester.tap(find.text('Retry acceptance'));
+    await tester.pumpAndSettle();
+    expect(find.text('Connected!'), findsOneWidget);
+    expect(remote.acceptCalls, hasLength(2));
   });
 
   testWidgets('signed-out recipient is asked to sign in; token survives', (

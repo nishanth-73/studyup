@@ -96,13 +96,17 @@ function setGlobal(name, value) {
 }
 
 async function runLanding({ path: pagePath, userAgent, apk }) {
+  const handlers = new Map();
+  let copiedText = null;
   const makeEl = (id, tag) => ({
     id,
     hidden: /\shidden\b/.test(tag || ''),
     textContent: '',
     href: '',
     disabled: /\sdisabled\b/.test(tag || ''),
-    addEventListener() {},
+    addEventListener(event, handler) {
+      handlers.set(`${id}:${event}`, handler);
+    },
   });
   const els = new Map();
   for (const { id, tag } of elementTags) els.set(id, makeEl(id, tag));
@@ -111,7 +115,7 @@ async function runLanding({ path: pagePath, userAgent, apk }) {
     return els.get(id);
   };
   const saved = {};
-  for (const name of ['document', 'location', 'navigator', 'fetch']) {
+  for (const name of ['document', 'location', 'navigator', 'fetch', 'setTimeout']) {
     saved[name] = Object.getOwnPropertyDescriptor(global, name);
   }
   setGlobal('document', { getElementById: get });
@@ -119,7 +123,15 @@ async function runLanding({ path: pagePath, userAgent, apk }) {
     pathname: pagePath,
     href: `https://invite.example.com${pagePath}`,
   });
-  setGlobal('navigator', { userAgent });
+  setGlobal('navigator', {
+    userAgent,
+    clipboard: {
+      writeText: async (text) => {
+        copiedText = text;
+      },
+    },
+  });
+  setGlobal('setTimeout', () => 0);
   setGlobal('fetch', () =>
     Promise.resolve({ ok: true, json: () => Promise.resolve(apk) }),
   );
@@ -130,11 +142,41 @@ async function runLanding({ path: pagePath, userAgent, apk }) {
     await new Promise((r) => setImmediate(r));
     await new Promise((r) => setImmediate(r));
   } finally {
-    for (const name of ['document', 'location', 'navigator', 'fetch']) {
+    for (const name of ['document', 'location', 'navigator', 'fetch', 'setTimeout']) {
       if (saved[name]) Object.defineProperty(global, name, saved[name]);
       else delete global[name];
     }
   }
+  Object.defineProperty(els, 'click', {
+    value: async (id) => {
+      setGlobal('navigator', {
+        userAgent,
+        clipboard: {
+          writeText: async (text) => {
+            copiedText = text;
+          },
+        },
+      });
+      setGlobal('setTimeout', () => 0);
+      try {
+        handlers.get(`${id}:click`)?.();
+        await Promise.resolve();
+        await Promise.resolve();
+      } finally {
+        if (saved.navigator) {
+          Object.defineProperty(global, 'navigator', saved.navigator);
+        } else {
+          delete global.navigator;
+        }
+        if (saved.setTimeout) {
+          Object.defineProperty(global, 'setTimeout', saved.setTimeout);
+        } else {
+          delete global.setTimeout;
+        }
+      }
+    },
+  });
+  Object.defineProperty(els, 'copiedText', { get: () => copiedText });
   return els;
 }
 
@@ -155,12 +197,17 @@ test('landing: invite link with the app installed hands the code to the app', as
     apk: CONFIGURED,
   });
   assert.equal(els.get('inviteBox').hidden, false);
+  assert.equal(els.get('inviteCode').textContent, TOKEN);
+  assert.equal(els.get('copyCode').hidden, false);
   assert.equal(els.get('openApp').hidden, false);
   // The custom-scheme hand-off carries the invitation code itself.
   assert.match(els.get('openApp').href, /^intent:\/\/invite\//);
   assert.ok(els.get('openApp').href.includes(TOKEN));
   // The browser fallback sends the recipient back to this same link.
   assert.match(els.get('openApp').href, /S\.browser_fallback_url=/);
+  await els.click('copyCode');
+  assert.equal(els.copiedText, TOKEN);
+  assert.equal(els.get('copyCode').textContent, 'Code copied');
 });
 
 test('landing: invite link without the app offers a real Download button', async () => {

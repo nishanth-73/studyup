@@ -19,6 +19,7 @@ import '../../features/community/presentation/friends_screen.dart';
 import '../../features/community/presentation/invite_accept_screen.dart';
 import '../../features/community/presentation/leaderboard_screen.dart';
 import '../../features/community/presentation/recap_screen.dart';
+import '../../features/social/data/social_remote.dart';
 import 'startup_gate.dart';
 
 // Bottom-tab destinations use NoTransitionPage = instant switch, no sliding.
@@ -37,6 +38,14 @@ final GoRouter appRouter = GoRouter(
   // ignored here and every entry point starts at StartupGate.
   overridePlatformDefaultLocation: true,
   initialLocation: '/',
+  onException: (_, state, router) {
+    final invitationLocation = inviteLocationForUri(state.uri);
+    if (invitationLocation != null) {
+      router.go(invitationLocation);
+      return;
+    }
+    router.go('/');
+  },
   routes: [
     GoRoute(path: '/', builder: (_, _) => const StartupGate()),
     GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
@@ -52,6 +61,11 @@ final GoRouter appRouter = GoRouter(
       path: '/invite/:token',
       builder: (_, s) =>
           InviteAcceptScreen(token: s.pathParameters['token'] ?? ''),
+    ),
+    GoRoute(
+      path: '/i/:token',
+      redirect: (_, state) =>
+          '/invite/${Uri.encodeComponent(state.pathParameters['token'] ?? 'invalid')}',
     ),
     ShellRoute(
       builder: (_, state, child) =>

@@ -444,7 +444,7 @@ void main() {
               find.byKey(const ValueKey('today-session-goal-ring-container')),
             )
             .height,
-        176,
+        220,
       );
       expect(find.text("Today's Session"), findsOneWidget);
       expectNoErrors(tester);
@@ -464,7 +464,7 @@ void main() {
               find.byKey(const ValueKey('today-session-goal-ring-container')),
             )
             .height,
-        164,
+        216,
       );
       expectNoErrors(tester);
     });

@@ -41,6 +41,7 @@ class _FakeServer {
   final invitations = <String, String>{}; // token -> inviter id
   final accepted = <String>{};
   final realtimeListeners = <void Function()>[];
+  final progressListeners = <void Function()>[];
 
   void addUser(_Profile p) => profiles[p.id] = p;
 
@@ -82,19 +83,32 @@ class _FakeServer {
     );
   }
 
-  /// Mirrors accept_invitation(): validates, then inserts ONE canonical
-  /// friendship row. Repeat taps raise instead of duplicating.
+  /// Mirrors accept_invitation(): validates and inserts one canonical
+  /// friendship row; retries by the accepting account are idempotent.
   String accept(String token, String viewer) {
     final inviter = invitations[token];
     if (inviter == null) throw StateError('invalid token');
-    if (accepted.contains(token)) throw StateError('already accepted');
     if (inviter == viewer) throw StateError('self invite');
+    if (accepted.contains(token)) {
+      if (acceptedBy[token] == viewer) return profiles[inviter]!.displayName;
+      throw StateError('already accepted');
+    }
     accepted.add(token);
+    acceptedBy[token] = viewer;
     friendships.add(pair(viewer, inviter));
     for (final cb in realtimeListeners) {
       cb();
     }
     return profiles[inviter]!.displayName;
+  }
+
+  final acceptedBy = <String, String>{};
+
+  void setWeeklyProgress(String userId, int seconds) {
+    weekSeconds[userId] = seconds;
+    for (final listener in progressListeners) {
+      listener();
+    }
   }
 
   List<RemoteFriend> friendsOf(String viewer) => [
@@ -202,6 +216,7 @@ class _ViewerRemote extends SocialRemote {
     void Function() onChange, {
     void Function(RealtimeSubscribeStatus status, Object? error)? onStatus,
   }) {
+    server.progressListeners.add(onChange);
     onStatus?.call(RealtimeSubscribeStatus.subscribed, null);
     return client.channel('progress-${viewer.hashCode}');
   }
@@ -390,39 +405,49 @@ void main() {
     },
   );
 
-  test('repeated taps never duplicate the friendship (idempotent)', () async {
-    SharedPreferences.setMockInitialValues({});
-    final server = _FakeServer()
-      ..addUser(_Profile('A', 'Alice'))
-      ..addUser(_Profile('B', 'Bob'));
-    final week = mondayOf(DateTime.now());
-    final alice = _ViewerRemote(server, 'A');
-    final bob = _ViewerRemote(server, 'B');
-    final bobContainer = _viewerContainer(bob, 'B');
-    addTearDown(bobContainer.dispose);
-    await ready(bobContainer);
+  test(
+    'repeated accept is idempotent and another user cannot reuse it',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final server = _FakeServer()
+        ..addUser(_Profile('A', 'Alice'))
+        ..addUser(_Profile('B', 'Bob'));
+      final week = mondayOf(DateTime.now());
+      final alice = _ViewerRemote(server, 'A');
+      final bob = _ViewerRemote(server, 'B');
+      final bobContainer = _viewerContainer(bob, 'B');
+      addTearDown(bobContainer.dispose);
+      await ready(bobContainer);
 
-    final token = await alice.createInvitation();
-    await bob.acceptInvitation(token);
-    expect(bob.acceptCalls, 1);
+      final token = await alice.createInvitation();
+      await bob.acceptInvitation(token);
+      expect(bob.acceptCalls, 1);
 
-    // Second tap on the same link: the server refuses, no second row.
-    await expectLater(bob.acceptInvitation(token), throwsA(isA<StateError>()));
-    expect(
-      bob.acceptCalls,
-      2,
-      reason: 'the attempt was made, not silently skipped',
-    );
-    expect(
-      server.friendships.where((p) => p == _FakeServer.pair('A', 'B')).length,
-      1,
-    );
+      // Retry by the same account succeeds without a second friendship.
+      expect(await bob.acceptInvitation(token), 'Alice');
+      expect(
+        bob.acceptCalls,
+        2,
+        reason: 'the retry reaches the idempotent backend operation',
+      );
+      expect(server.friendships, hasLength(1));
+      final carol = _ViewerRemote(server, 'C');
+      await expectLater(
+        carol.acceptInvitation(token),
+        throwsA(isA<StateError>()),
+      );
+      expect(server.friendships, hasLength(1));
+      expect(
+        server.friendships.where((p) => p == _FakeServer.pair('A', 'B')).length,
+        1,
+      );
 
-    final entries = await bobContainer.read(
-      communityDisplayProvider(week).future,
-    );
-    expect(entries.where((e) => e.memberId == 'A'), hasLength(1));
-  });
+      final entries = await bobContainer.read(
+        communityDisplayProvider(week).future,
+      );
+      expect(entries.where((e) => e.memberId == 'A'), hasLength(1));
+    },
+  );
 
   test('ranking uses real data only (no invented progress)', () async {
     SharedPreferences.setMockInitialValues({});
@@ -458,11 +483,64 @@ void main() {
     expect(entries, hasLength(2));
   });
 
-  test('two hours of real study time crosses to the friend (not 0m)', () async {
+  test(
+    'progress recorded before friendship appears after acceptance',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final server = _FakeServer()
+        ..addUser(_Profile('A', 'Alice', avatarId: 'avatar-a'))
+        ..addUser(_Profile('B', 'Bob', avatarId: 'avatar-b'));
+      final week = mondayOf(DateTime.now());
+      final alice = _ViewerRemote(server, 'A');
+      final bob = _ViewerRemote(server, 'B');
+      final aliceContainer = _viewerContainer(alice, 'A');
+      final bobContainer = _viewerContainer(bob, 'B');
+      addTearDown(aliceContainer.dispose);
+      addTearDown(bobContainer.dispose);
+      await ready(aliceContainer);
+      await ready(bobContainer);
+
+      // The actual session is already in the shared weekly aggregate when the
+      // invitation is sent and accepted.
+      server.weekSeconds['A'] = 7200;
+      server.totalSeconds['A'] = 7200;
+      final token = await alice.createInvitation();
+      await bob.acceptInvitation(token);
+
+      // Bob's screen must include that historical-in-the-week progress.
+      final bEntries = await bobContainer.read(
+        communityDisplayProvider(week).future,
+      );
+      final aliceRow = bEntries.firstWhere((e) => e.memberId == 'A');
+      expect(aliceRow.weekSeconds, 7200);
+      expect(formatHoursMinutes(aliceRow.weekSeconds), '2h 00m');
+      expect(aliceRow.hasData, isTrue);
+      expect(aliceRow.displayName, 'Alice');
+
+      // The same underlying total is visible in both directions: the query
+      // both users run against is the same friends scope with the same week
+      // window, so nobody sees a different number than the other.
+      final aEntries = await aliceContainer.read(
+        communityDisplayProvider(week).future,
+      );
+      final bobRow = aEntries.firstWhere((e) => e.memberId == 'B');
+      expect(bobRow.hasData, isTrue, reason: 'a shared zero is data');
+      expect(bobRow.weekSeconds, 0, reason: 'a genuine zero, not a failure');
+      // Both users run the same friends-scope query over the same week, so
+      // each side's raw result set is identical: no one can see a different
+      // number than the other.
+      final bIds = server.boardOf('B').map((r) => r.userId).toSet();
+      final aIds = server.boardOf('A').map((r) => r.userId).toSet();
+      expect(bIds, aIds);
+      expect(bIds, containsAll(<String>['A', 'B']));
+    },
+  );
+
+  test('new weekly study events refresh the other account board', () async {
     SharedPreferences.setMockInitialValues({});
     final server = _FakeServer()
-      ..addUser(_Profile('A', 'Alice', avatarId: 'avatar-a'))
-      ..addUser(_Profile('B', 'Bob', avatarId: 'avatar-b'));
+      ..addUser(_Profile('A', 'Alice'))
+      ..addUser(_Profile('B', 'Bob'));
     final week = mondayOf(DateTime.now());
     final alice = _ViewerRemote(server, 'A');
     final bob = _ViewerRemote(server, 'B');
@@ -475,36 +553,30 @@ void main() {
 
     final token = await alice.createInvitation();
     await bob.acceptInvitation(token);
+    aliceContainer.listen(remoteRealtimeProvider, (_, _) {});
+    bobContainer.listen(remoteRealtimeProvider, (_, _) {});
 
-    // Alice studies ~2h this week; the server holds the aggregate.
-    server.weekSeconds['A'] = 7200;
-    server.totalSeconds['A'] = 7200;
+    await aliceContainer.read(communityDisplayProvider(week).future);
+    await bobContainer.read(communityDisplayProvider(week).future);
+    server.setWeeklyProgress('A', 7200);
+    await Future<void>.delayed(const Duration(milliseconds: 350));
 
-    // Bob's screen: Alice must show the REAL duration, not 0m.
-    final bEntries = await bobContainer.read(
+    var bobEntries = await bobContainer.read(
       communityDisplayProvider(week).future,
     );
-    final aliceRow = bEntries.firstWhere((e) => e.memberId == 'A');
-    expect(aliceRow.weekSeconds, 7200);
-    expect(formatHoursMinutes(aliceRow.weekSeconds), '2h 00m');
-    expect(aliceRow.hasData, isTrue);
-    expect(aliceRow.displayName, 'Alice');
+    expect(
+      bobEntries.firstWhere((entry) => entry.memberId == 'A').weekSeconds,
+      7200,
+    );
 
-    // The same underlying total is visible in both directions: the query
-    // both users run against is the same friends scope with the same week
-    // window, so nobody sees a different number than the other.
-    final aEntries = await aliceContainer.read(
+    server.setWeeklyProgress('B', 1800);
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    final aliceEntries = await aliceContainer.read(
       communityDisplayProvider(week).future,
     );
-    final bobRow = aEntries.firstWhere((e) => e.memberId == 'B');
-    expect(bobRow.hasData, isTrue, reason: 'a shared zero is data');
-    expect(bobRow.weekSeconds, 0, reason: 'a genuine zero, not a failure');
-    // Both users run the same friends-scope query over the same week, so
-    // each side's raw result set is identical: no one can see a different
-    // number than the other.
-    final bIds = server.boardOf('B').map((r) => r.userId).toSet();
-    final aIds = server.boardOf('A').map((r) => r.userId).toSet();
-    expect(bIds, aIds);
-    expect(bIds, containsAll(<String>['A', 'B']));
+    expect(
+      aliceEntries.firstWhere((entry) => entry.memberId == 'B').weekSeconds,
+      1800,
+    );
   });
 }

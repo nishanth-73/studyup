@@ -156,18 +156,21 @@
       <p id="inviteMessage">Accepting happens inside the app, only after you
         tap <strong>Accept invitation</strong>. Opening this page does not use
         the invitation up, and nothing is shared without your say-so.</p>
+      <p class="hint">Invitation code: <code id="inviteCode"></code></p>
       <div class="actions">
         <a class="btn" id="openApp" hidden>Open StudyUp to accept</a>
         <a class="btn" id="downloadInInvite" hidden rel="noopener">Download StudyUp</a>
+        <button class="btn btn--ghost" id="copyCode" type="button" hidden>Copy invitation code</button>
         <button class="btn btn--ghost" id="copyLink" type="button">Copy invite link</button>
       </div>
       <p id="downloadMissing" class="hint" hidden>No download destination is
-        configured for StudyUp yet, so there is no link we can safely send you
-        to. Ask your friend to share an install link, or check back once the app
-        is published.</p>
+        configured. We cannot provide a verified Play Store or APK link yet.
+        Keep this page or copy the invitation code; after installing StudyUp
+        from a trusted source, return here and tap Open StudyUp or reopen this
+        invitation link.</p>
       <p id="reopenHint" class="hint" hidden>After installing, reopen this
-        same link: the invitation code is kept in the address, so StudyUp opens
-        straight onto the invitation.</p>
+        page or tap Open StudyUp. The code stays in this link. Deferred
+        invitation delivery during installation is not configured.</p>
       <p id="deviceHint" class="hint" hidden>StudyUp runs on Android. If it
         is already installed, tapping <strong>Open StudyUp</strong> goes
         straight to the invitation. On a computer, copy the link and send it to
@@ -176,8 +179,8 @@
 
     <section class="card" id="apkBox" aria-labelledby="apkTitle">
       <h2 id="apkTitle">Android app</h2>
-      <p id="apkNote">An installable Android build is on the way. Invitation
-        links and in-app feedback already work today.</p>
+      <p id="apkNote">No verified Play Store listing or public APK download is
+        configured yet.</p>
       <div class="actions">
         <a class="btn" id="apkLink" href="#" hidden rel="noopener">Download Android APK</a>
         <p id="apkSoon" class="hint" hidden>No download URL is configured yet.</p>
@@ -209,6 +212,8 @@
       if (invitePath) {
         document.getElementById('inviteBox').hidden = false;
         if (token) {
+          document.getElementById('inviteCode').textContent = token;
+          document.getElementById('copyCode').hidden = false;
           document.getElementById('deviceHint').hidden = false;
           if (isAndroid) {
             var fallback = encodeURIComponent(location.href);
@@ -229,22 +234,31 @@
       }
 
       var copyBtn = document.getElementById('copyLink');
+      var copyCodeBtn = document.getElementById('copyCode');
+      function copyText(button, text, successMessage) {
+        var original = button.textContent;
+        function done(message) {
+          button.textContent = message;
+          announce(message);
+          setTimeout(function () { button.textContent = original; }, 2000);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(
+            function () { done(successMessage); },
+            function () { done('Copy failed — select the text'); }
+          );
+        } else {
+          done('Select and copy the text');
+        }
+      }
       if (copyBtn) {
         copyBtn.addEventListener('click', function () {
-          var original = copyBtn.textContent;
-          function done(message) {
-            copyBtn.textContent = message;
-            announce(message);
-            setTimeout(function () { copyBtn.textContent = original; }, 2000);
-          }
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(location.href).then(
-              function () { done('Copied'); },
-              function () { done('Copy failed — use the address bar'); }
-            );
-          } else {
-            done('Copy the address bar link');
-          }
+          copyText(copyBtn, location.href, 'Link copied');
+        });
+      }
+      if (copyCodeBtn) {
+        copyCodeBtn.addEventListener('click', function () {
+          copyText(copyCodeBtn, token || '', 'Code copied');
         });
       }
 

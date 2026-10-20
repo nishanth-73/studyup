@@ -172,6 +172,14 @@ String? parseInviteToken(Uri uri) {
   }
 }
 
+/// Converts a shared invitation URI into the registered app route.
+/// Used both by the App Links listener and GoRouter's exception fallback.
+String? inviteLocationForUri(Uri uri) {
+  final token = parseInviteToken(uri);
+  if (token == null) return null;
+  return '/invite/${Uri.encodeComponent(token)}';
+}
+
 bool _isInviteTokenCandidate(String s) =>
     s.isNotEmpty &&
     s.length <= 128 &&

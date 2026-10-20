@@ -34,6 +34,8 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
   InvitePreview? _preview;
   String? _message;
   String? _friendName;
+  bool _canRetryPreview = false;
+  bool _canRetryAccept = false;
 
   /// Notification ids already emitted in this screen's lifetime: a link
   /// tapped twice (cold + warm start) must not notify twice.
@@ -56,23 +58,32 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
   Future<void> _load() async {
     final remote = _remote;
     if (remote == null) {
-      debugPrint('[invite] no backend configured; cannot load ${widget.token}');
+      if (!mounted) return;
+      debugPrint('[invite] no backend configured for invitation preview');
       setState(() {
         _phase = _Phase.failed;
+        _canRetryPreview = true;
         _message = 'Backend not connected yet. Ask your friend for the app setup, then open this link again.';
       });
       return;
     }
+    if (mounted) {
+      setState(() {
+        _phase = _Phase.checking;
+        _canRetryPreview = false;
+        _canRetryAccept = false;
+      });
+    }
     try {
       final preview = await remote.previewInvitation(widget.token);
       debugPrint(
-        '[invite] preview ${widget.token}: valid=${preview.valid} '
-        'reason=${preview.reason} from=${preview.displayName}',
+        '[invite] preview valid=${preview.valid} reason=${preview.reason}',
       );
       if (!mounted) return;
       if (!preview.valid) {
         setState(() {
           _phase = _Phase.failed;
+          _canRetryPreview = false;
           _message = _reasonText(preview.reason);
         });
         return;
@@ -86,16 +97,17 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
       // "Invitation received" — once per invitation code, so re-opening the
       // same link (cold start, warm start, repeated taps) cannot spam.
       await _notifyOnce(
-        id: 'invite-received:${widget.token}',
+        id: 'invite-received:${hashInviteToken(widget.token)}',
         title: 'New StudyUp invitation',
         body: '${preview.displayName} invited you to join StudyUp.',
       );
     } catch (error, stack) {
-      debugPrint('[invite] preview failed for ${widget.token}: $error\n$stack');
+      debugPrint('[invite] preview failed: $error\n$stack');
       if (!mounted) return;
       setState(() {
         _phase = _Phase.failed;
-        _message = 'Could not load this invitation. Check your connection.';
+        _canRetryPreview = true;
+        _message = 'Could not verify this invitation with StudyUp. Check your connection, then retry.';
       });
     }
   }
@@ -133,18 +145,20 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
     setState(() {
       _phase = _Phase.working;
       _message = null;
+      _canRetryAccept = false;
     });
     final remote = _remote;
     if (remote == null) {
       setState(() {
         _phase = _Phase.failed;
         _message = 'Backend not connected yet.';
+        _canRetryPreview = false;
       });
       return;
     }
     try {
       final name = await remote.acceptInvitation(widget.token);
-      debugPrint('[invite] accepted ${widget.token}; now friends with $name');
+      debugPrint('[invite] accepted invitation; now friends with $name');
       if (!mounted) return;
       // The friendship now exists server-side: refresh the friends list
       // and the friends leaderboard so the new friend appears immediately
@@ -159,16 +173,25 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
       // Acceptance is only announced AFTER the server confirmed it — a
       // failed accept must never look successful.
       await _notifyOnce(
-        id: 'invite-accepted:${widget.token}',
+        id: 'invite-accepted:${hashInviteToken(widget.token)}',
         title: 'Invitation accepted',
         body: 'You and $name are now study buddies on StudyUp.',
       );
     } catch (error, stack) {
-      debugPrint('[invite] accept failed for ${widget.token}: $error\n$stack');
+      debugPrint('[invite] accept failed: $error\n$stack');
       if (!mounted) return;
       setState(() {
         _phase = _Phase.failed;
         _message = _acceptError(error);
+        final text = error.toString().toLowerCase();
+        _canRetryAccept = ![
+          'self invite',
+          'already friends',
+          'expired',
+          'revoked',
+          'already accepted',
+          'request pending',
+        ].any(text.contains);
       });
     }
   }
@@ -247,6 +270,10 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
           title: 'Invitation unavailable',
           body: _message ?? 'Something went wrong.',
           actions: [
+            if (_canRetryPreview)
+              PrimaryButton(label: 'Retry', onPressed: _load),
+            if (_canRetryAccept)
+              PrimaryButton(label: 'Retry acceptance', onPressed: _accept),
             PrimaryButton(
               label: 'Back to StudyUp',
               onPressed: () => context.go('/home'),
@@ -260,9 +287,7 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
               'No worries — you have not been added to anyone\u2019s Community. '
               '${_preview?.displayName ?? 'Your friend'}\u2019s invitation is still '
               'valid if you change your mind.',
-          actions: [
-            PrimaryButton(label: 'Back to StudyUp', onPressed: _leave),
-          ],
+          actions: [PrimaryButton(label: 'Back to StudyUp', onPressed: _leave)],
         );
       case _Phase.done:
         return _card(
@@ -313,7 +338,8 @@ class _InviteAcceptScreenState extends ConsumerState<InviteAcceptScreen> {
     }
     return _card(
       title: 'You\u2019re invited!',
-      body: '${_preview?.displayName ?? 'A friend'} invited you to join StudyUp.',
+      body:
+          '${_preview?.displayName ?? 'A friend'} invited you to join StudyUp.',
       actions: [
         Row(
           children: [

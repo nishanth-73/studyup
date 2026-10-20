@@ -10,6 +10,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_shell.dart';
 import '../../../core/widgets/ui_kit.dart';
+import '../../../core/widgets/week_picker_dialog.dart';
+import '../../progress/presentation/study_progress_controller.dart';
 import '../../social/data/social_providers.dart';
 import '../../social/data/social_remote.dart';
 import '../data/community_demo.dart';
@@ -100,6 +102,13 @@ class CommunityScreen extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+      const SizedBox(width: 8),
+      IconButton(
+        key: const ValueKey('community-week-picker'),
+        tooltip: 'Pick a week',
+        onPressed: () => _openWeekPicker(context, ref),
+        icon: const Icon(Icons.calendar_month_rounded),
       ),
     ],
   );
@@ -255,23 +264,49 @@ class CommunityScreen extends ConsumerWidget {
     );
   }
 
-  // ---------- 1. current-week caption ----------
+  // ---------- 1. selected-week caption and picker ----------
 
-  /// Makes the Monday-through-Sunday period visible on the board.
+  /// Makes the selected Monday-through-Sunday period visible on the board.
   Widget _weekCaption(DateTime weekStart) {
     final now = DateTime.now();
+    final currentMonday = mondayOf(now);
+    final label = !weekStart.isBefore(currentMonday)
+        ? 'This Week'
+        : weekStart == currentMonday.subtract(const Duration(days: 7))
+        ? 'Last Week'
+        : 'Week';
     var range = weekRangeLabel(weekStart);
     if (weekStart.year != now.year) range = '$range, ${weekStart.year}';
     return Padding(
       padding: const EdgeInsets.only(top: 2),
       child: Text(
-        'Current week · Mon–Sun · $range',
+        '$label · Mon–Sun · $range',
         style: AppTextStyles.secondary12,
         textAlign: TextAlign.center,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
     );
+  }
+
+  Future<void> _openWeekPicker(BuildContext context, WidgetRef ref) async {
+    final sessions = ref.read(studyProgressProvider).sessions;
+    final now = DateTime.now();
+    final picked = await showWeekPickerDialog(
+      context: context,
+      title: 'Select week',
+      initialMonday: ref.read(communityWeekProvider),
+      minutesFor: (monday) =>
+          studiedSecondsInRange(
+            sessions,
+            monday,
+            monday.add(const Duration(days: 7)),
+            now,
+          ) ~/
+          60,
+    );
+    if (picked == null) return;
+    ref.read(communityWeekProvider.notifier).state = mondayOf(picked);
   }
 
   // ---------- 2. podium ----------

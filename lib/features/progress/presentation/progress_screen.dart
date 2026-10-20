@@ -428,6 +428,62 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     final checkIn =
         activeSession?.checkInTime ?? latestTodaySession?.checkInTime;
     final checkOut = latestTodaySession?.checkOutTime;
+    final sessionDetails = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Goal: ${_fmtDur(goalMinutes)}',
+          style: AppTextStyles.body14Bold,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        if (isGoalReached(completed, goalMinutes))
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Pill(
+              "Today's Goal Reached",
+              background: AppColors.green,
+              foreground: AppColors.onCta,
+            ),
+          ),
+        Text(
+          activeSession == null
+              ? 'No active session'
+              : isPaused
+              ? 'Paused · daily session'
+              : 'Studying · daily session',
+          style: AppTextStyles.caption12,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          _elapsedLabel(activeSession?.durationAt(now) ?? Duration.zero),
+          style: AppTextStyles.title28.copyWith(
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+        if (checkIn != null || checkOut != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Check-in: ${checkIn == null ? '—' : TimeOfDay.fromDateTime(checkIn).format(context)}\n'
+              'Check-out: ${checkOut == null ? '—' : TimeOfDay.fromDateTime(checkOut).format(context)}',
+              style: AppTextStyles.caption12,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+    );
+    Widget goalRing(double size) => _TodayGoalProgressRing(
+      trackedSeconds: trackedSeconds,
+      goalMinutes: goalMinutes,
+      selectedDate: _today,
+      sessionsRevision: progress.sessions,
+      size: size,
+    );
 
     return [
       Container(
@@ -441,71 +497,27 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
           children: [
             Text("Today's Session", style: AppTextStyles.section18),
             const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 300) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        'Goal: ${_fmtDur(goalMinutes)}',
-                        style: AppTextStyles.body14Bold,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      if (isGoalReached(completed, goalMinutes))
-                        const Padding(
-                          padding: EdgeInsets.only(top: 6),
-                          child: Pill(
-                            "Today's Goal Reached",
-                            background: AppColors.green,
-                            foreground: AppColors.onCta,
-                          ),
-                        ),
-                      Text(
-                        activeSession == null
-                            ? 'No active session'
-                            : isPaused
-                            ? 'Paused · daily session'
-                            : 'Studying · daily session',
-                        style: AppTextStyles.caption12,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _elapsedLabel(
-                          activeSession?.durationAt(now) ?? Duration.zero,
-                        ),
-                        style: AppTextStyles.title28.copyWith(
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                      if (checkIn != null || checkOut != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            'Check-in: ${checkIn == null ? '—' : TimeOfDay.fromDateTime(checkIn).format(context)}\n'
-                            'Check-out: ${checkOut == null ? '—' : TimeOfDay.fromDateTime(checkOut).format(context)}',
-                            style: AppTextStyles.caption12,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
+                      sessionDetails,
+                      const SizedBox(height: 12),
+                      Center(child: goalRing(216)),
                     ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                _TodayGoalProgressRing(
-                  trackedSeconds: trackedSeconds,
-                  goalMinutes: goalMinutes,
-                  selectedDate: _today,
-                  sessionsRevision: progress.sessions,
-                  size: MediaQuery.sizeOf(context).width < 360 ? 164 : 176,
-                ),
-              ],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(child: sessionDetails),
+                    const SizedBox(width: 12),
+                    goalRing(constraints.maxWidth < 340 ? 208 : 220),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 14),
             _CheckInOutButtons(

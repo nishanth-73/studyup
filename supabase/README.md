@@ -37,14 +37,19 @@ app.
   Monday-to-Monday window and merging overlapping sessions before summing.
   Friendship controls who may read the aggregate, not when eligible study
   time was recorded.
+- `supabase/migrations/20261115_invitation_acceptance_idempotency.sql` —
+  records the authenticated recipient of a completed accept so retries after
+  a lost response are safe without allowing another account to reuse a
+  single-use invitation.
 - `lib/features/social/` — `SocialRemote` (all Supabase queries),
   `SessionSyncService` (idempotent upload, local persistence remains
   authoritative), providers (live gating, friend-scoped realtime
   invalidation, lifecycle refresh, and retry fallback).
 - Community — live server leaderboard (friends scope of
-  `leaderboard_scope`), podium/comparison/rows from one current-week
-  ranking; the week is Monday 00:00 through the following Monday 00:00 in
-  the viewing device's local timezone (converted to UTC for the RPC); demo
+  `leaderboard_scope`), podium/comparison/rows from one selected-week
+  ranking; the picker browses past weeks, Monday 00:00 through the
+  following Monday 00:00 in the viewing device's local timezone (converted
+  to UTC for the RPC); demo
   fixtures only offline.
 - Friends — live friends list, incoming requests (realtime),
   display-name search, send/accept/decline/cancel, remove; privacy
@@ -114,13 +119,17 @@ app.
    `supabase/migrations/20261102_social_backend.sql`,
    `supabase/migrations/20261104_hardening_fix.sql`,
    `supabase/migrations/20261112_friends_zero_progress.sql`, and
-   `supabase/migrations/20261113_community_progress_realtime.sql`, and
-   `supabase/migrations/20261114_community_weekly_dedup.sql`, in
-   that order.
+   `supabase/migrations/20261113_community_progress_realtime.sql`,
+   `supabase/migrations/20261114_community_weekly_dedup.sql`, and
+   `supabase/migrations/20261115_invitation_acceptance_idempotency.sql`,
+   in that order.
    The third file is **required**: without it
    `invitation_preview`/`accept_invitation` fail with
    `"function digest(text, unknown) does not exist"`, so the whole
    invitation flow is broken.
+   Keep historical files intact if they may already be recorded as applied.
+   The final migration is forward-only; this code change has not applied or
+   verified it against production.
 5. Run the app with your values (never commit them):
    ```sh
    flutter run \

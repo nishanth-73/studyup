@@ -97,7 +97,8 @@ Map<String, Object?> endedSessionDoc() {
 }
 
 Map<String, Object?> pausedSessionDoc() {
-  final now = DateTime.now();
+  final current = DateTime.now();
+  final now = DateTime(current.year, current.month, current.day, 12);
   final start = now.subtract(const Duration(hours: 2));
   final pause = now.subtract(const Duration(hours: 1));
   return {

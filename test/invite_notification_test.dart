@@ -98,9 +98,7 @@ void main() {
 
     expect(find.text('Accept invitation'), findsOneWidget);
     final items = await NotificationService.instance.loadCenterItems();
-    final received = items.where(
-      (i) => i.title == 'New StudyUp invitation',
-    );
+    final received = items.where((i) => i.title == 'New StudyUp invitation');
     expect(received, hasLength(1));
     expect(received.single.body, contains('Ajay'));
     // …and nothing claims success before the server confirms.
@@ -148,27 +146,33 @@ void main() {
     final remote = _Remote();
     await pumpInvite(tester, remote);
     final first = await NotificationService.instance.loadCenterItems();
-    expect(first.where((i) => i.title == 'New StudyUp invitation'), hasLength(1));
+    expect(
+      first.where((i) => i.title == 'New StudyUp invitation'),
+      hasLength(1),
+    );
 
     // Re-opening the same link (the "tapped twice" case) upserts the same
     // id instead of adding a second row.
     await NotificationService.instance.recordCommunityEvent(
-      id: 'invite-received:$_token',
+      id: 'invite-received:${hashInviteToken(_token)}',
       title: 'New StudyUp invitation',
       body: 'Ajay invited you to join StudyUp.',
     );
     await NotificationService.instance.recordCommunityEvent(
-      id: 'invite-accepted:$_token',
+      id: 'invite-accepted:${hashInviteToken(_token)}',
       title: 'Invitation accepted',
       body: 'You and Ajay are now study buddies on StudyUp.',
     );
     await NotificationService.instance.recordCommunityEvent(
-      id: 'invite-accepted:$_token',
+      id: 'invite-accepted:${hashInviteToken(_token)}',
       title: 'Invitation accepted',
       body: 'You and Ajay are now study buddies on StudyUp.',
     );
     final after = await NotificationService.instance.loadCenterItems();
-    expect(after.where((i) => i.title == 'New StudyUp invitation'), hasLength(1));
+    expect(
+      after.where((i) => i.title == 'New StudyUp invitation'),
+      hasLength(1),
+    );
     expect(after.where((i) => i.title == 'Invitation accepted'), hasLength(1));
   });
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:studyup/core/deeplink/invite_links.dart';
 import 'package:studyup/core/router/app_router.dart';
@@ -80,6 +81,42 @@ void main() {
       parseInviteToken(Uri.parse('https://studyup-4x7z.vercel.app/')),
       isNull,
     );
+    expect(
+      inviteLocationForUri(uri),
+      '/invite/$_code',
+      reason: 'the exact shared HTTPS URL resolves to a registered route',
+    );
+  });
+
+  testWidgets('GoRouter recovers the exact HTTPS App Link route', (
+    tester,
+  ) async {
+    final router = GoRouter(
+      initialLocation: 'https://studyup-4x7z.vercel.app/i/$_code',
+      routes: [
+        GoRoute(path: '/', builder: (_, _) => const Text('HOME')),
+        GoRoute(
+          path: '/invite/:token',
+          builder: (_, state) =>
+              Text('INVITATION ${state.pathParameters['token']}'),
+        ),
+        GoRoute(
+          path: '/i/:token',
+          redirect: (_, state) => '/invite/${state.pathParameters['token']}',
+        ),
+      ],
+      onException: (_, state, router) {
+        final location = inviteLocationForUri(state.uri);
+        router.go(location ?? '/');
+      },
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.pumpAndSettle();
+
+    expect(find.text('INVITATION $_code'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('cold start from an invitation link resumes it, never Home', (

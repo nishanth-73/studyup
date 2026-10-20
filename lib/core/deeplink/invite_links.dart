@@ -41,7 +41,9 @@ class InviteLinks {
       final initial = await AppLinks().getInitialLink();
       if (initial == null) return null;
       final token = parseInviteToken(initial);
-      debugPrint('[invite] cold-start link $initial -> token ${token ?? 'none'}');
+      debugPrint(
+        '[invite] cold-start ${token == null ? 'non-invitation' : 'invitation'} link received',
+      );
       if (token != null) return token;
       return _isInviteLink(initial) ? 'invalid' : null;
     } catch (error) {
@@ -58,21 +60,25 @@ class InviteLinks {
     _started = true;
     try {
       final links = AppLinks();
-      _sub = links.uriLinkStream.listen(_route, onError: (_) {});
+      _sub = links.uriLinkStream.listen(
+        _route,
+        onError: (Object error, StackTrace stackTrace) {
+          debugPrint('[invite] warm-link stream failed: $error\n$stackTrace');
+        },
+      );
     } catch (error) {
       debugPrint('Invite links unavailable: $error');
     }
   }
 
   static void _route(Uri uri) {
-    final parsedToken = parseInviteToken(uri);
-    if (parsedToken == null && !_isInviteLink(uri)) return;
-    final token = parsedToken ?? 'invalid';
-    debugPrint('[invite] warm link $uri -> /invite/$token');
+    final destination = inviteLocationForUri(uri);
+    if (destination == null && !_isInviteLink(uri)) return;
+    debugPrint('[invite] warm invitation link received');
     try {
-      appRouter.go('/invite/${Uri.encodeComponent(token)}');
+      appRouter.go(destination ?? '/invite/invalid');
     } catch (error) {
-      debugPrint('[invite] navigation to /invite/$token failed: $error');
+      debugPrint('[invite] invitation navigation failed: $error');
     }
   }
 
@@ -94,7 +100,7 @@ class InviteLinks {
 
   /// Stash a token across the sign-in/onboarding flow.
   static Future<void> stashPending(String token) async {
-    debugPrint('[invite] stashing pending token $token');
+    debugPrint('[invite] stashing pending invitation');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_pendingKey, token);
   }
@@ -104,7 +110,7 @@ class InviteLinks {
     final token = prefs.getString(_pendingKey);
     if (token != null && token.isNotEmpty) {
       await prefs.remove(_pendingKey);
-      debugPrint('[invite] resumed pending token $token');
+      debugPrint('[invite] resuming pending invitation');
       return token;
     }
     return null;

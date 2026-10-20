@@ -61,11 +61,7 @@ final remoteRealtimeProvider = Provider.autoDispose<void>((ref) {
   final remote = ref.watch(socialRemoteProvider);
   if (remote == null) return;
   final subscriptions = <RealtimeChannel>[];
-  final connected = <String, bool>{
-    'requests': false,
-    'friendships': false,
-    'progress': false,
-  };
+  final connectionState = <String, bool>{};
   var disposed = false;
   Timer? refreshDebounce;
   Timer? fallbackRefresh;
@@ -90,26 +86,26 @@ final remoteRealtimeProvider = Provider.autoDispose<void>((ref) {
   ) {
     if (disposed) return;
     final isConnected = status == RealtimeSubscribeStatus.subscribed;
-    connected[key] = isConnected;
+    final wasConnected = connectionState[key];
+    connectionState[key] = isConnected;
     if (isConnected) {
-      if (connected.values.every((value) => value)) {
-        fallbackRefresh?.cancel();
-        fallbackRefresh = null;
-      }
+      if (wasConnected == false) scheduleRefresh();
       return;
     }
-
     debugPrint(
       error == null
           ? '[community] realtime $key subscription $status'
           : '[community] realtime $key subscription $status: $error',
     );
-    fallbackRefresh ??= Timer.periodic(
-      const Duration(seconds: 60),
-      (_) => refreshAll(),
-    );
     scheduleRefresh();
   }
+
+  // Keep one low-frequency safety refresh even while Realtime reports a
+  // healthy connection; it covers a dropped event without aggressive polling.
+  fallbackRefresh = Timer.periodic(
+    const Duration(seconds: 60),
+    (_) => refreshAll(),
+  );
 
   try {
     subscriptions.add(
@@ -145,10 +141,6 @@ final remoteRealtimeProvider = Provider.autoDispose<void>((ref) {
     );
   } catch (error) {
     debugPrint('[community] could not create realtime subscriptions: $error');
-    fallbackRefresh ??= Timer.periodic(
-      const Duration(seconds: 60),
-      (_) => refreshAll(),
-    );
     scheduleRefresh();
   }
 

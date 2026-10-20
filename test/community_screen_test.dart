@@ -267,7 +267,8 @@ void main() {
     await pumpCommunity(tester);
     expect(find.text('Community'), findsOneWidget);
     expect(find.text('Grow together, win together.'), findsOneWidget);
-    expect(find.textContaining('Current week · Mon–Sun'), findsOneWidget);
+    expect(find.textContaining('This Week · Mon–Sun'), findsOneWidget);
+    expect(find.byKey(const ValueKey('community-week-picker')), findsOneWidget);
     expect(find.text('Top 3'), findsOneWidget);
     expect(find.text('You vs. Top Friend'), findsOneWidget);
     await tester.scrollUntilVisible(
@@ -372,13 +373,42 @@ void main() {
     expect(find.text('DEMO'), findsWidgets);
   });
 
-  testWidgets('shows the current Monday-to-Sunday period without a picker', (
+  testWidgets('shows the current Monday-to-Sunday period and picker', (
     tester,
   ) async {
     await pumpCommunity(tester);
     expect(tester.takeException(), isNull);
-    expect(find.textContaining('Current week · Mon–Sun'), findsOneWidget);
-    expect(find.byIcon(Icons.calendar_month), findsNothing);
+    expect(find.textContaining('This Week · Mon–Sun'), findsOneWidget);
+    expect(find.byIcon(Icons.calendar_month_rounded), findsOneWidget);
+  });
+
+  testWidgets('week picker is available and lists selectable weeks', (
+    tester,
+  ) async {
+    await pumpCommunity(tester);
+
+    await tester.tap(find.byKey(const ValueKey('community-week-picker')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select week'), findsOneWidget);
+    expect(find.textContaining('This week'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('choosing a past week updates the Community period', (
+    tester,
+  ) async {
+    await pumpCommunity(tester);
+    await tester.tap(find.byKey(const ValueKey('community-week-picker')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Previous month'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('W1 ·').first);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Week · Mon–Sun'), findsOneWidget);
+    expect(find.textContaining('This Week · Mon–Sun'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('offline invite button does not share the encoded payload', (
