@@ -328,8 +328,11 @@ void main() {
       };
     }
 
-    Future<void> pumpProgress(WidgetTester tester) async {
-      tester.view.physicalSize = const Size(800, 1800);
+    Future<void> pumpProgress(
+      WidgetTester tester, {
+      Size viewport = const Size(800, 1800),
+    }) async {
+      tester.view.physicalSize = viewport;
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       final router = GoRouter(
@@ -441,9 +444,28 @@ void main() {
               find.byKey(const ValueKey('today-session-goal-ring-container')),
             )
             .height,
-        152,
+        176,
       );
       expect(find.text("Today's Session"), findsOneWidget);
+      expectNoErrors(tester);
+    });
+
+    testWidgets('Today’s Session ring fits a narrow screen', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'studyup.tasks.v1': jsonEncode({todayKey(): []}),
+        'studyup.tasks.starterSeeded.v1': true,
+        'studyup.studySessions.v1': jsonEncode([]),
+      });
+      await pumpProgress(tester, viewport: const Size(320, 720));
+
+      expect(
+        tester
+            .getSize(
+              find.byKey(const ValueKey('today-session-goal-ring-container')),
+            )
+            .height,
+        164,
+      );
       expectNoErrors(tester);
     });
 

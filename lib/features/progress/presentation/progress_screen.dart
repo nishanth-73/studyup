@@ -59,12 +59,14 @@ class _TodayGoalProgressRing extends StatefulWidget {
   final int goalMinutes;
   final DateTime selectedDate;
   final List<StudySession> sessionsRevision;
+  final double size;
 
   const _TodayGoalProgressRing({
     required this.trackedSeconds,
     required this.goalMinutes,
     required this.selectedDate,
     required this.sessionsRevision,
+    required this.size,
   });
 
   @override
@@ -112,8 +114,8 @@ class _TodayGoalProgressRingState extends State<_TodayGoalProgressRing>
     );
     return SizedBox(
       key: const ValueKey('today-session-goal-ring-container'),
-      width: 152,
-      height: 152,
+      width: widget.size,
+      height: widget.size,
       child: AnimatedBuilder(
         animation: _entrance,
         builder: (context, _) {
@@ -501,6 +503,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
                   goalMinutes: goalMinutes,
                   selectedDate: _today,
                   sessionsRevision: progress.sessions,
+                  size: MediaQuery.sizeOf(context).width < 360 ? 164 : 176,
                 ),
               ],
             ),
