@@ -430,12 +430,16 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
 
       final ringFinder = find.byKey(const ValueKey('today-session-goal-ring'));
+      final progressFinder = find.descendant(
+        of: ringFinder,
+        matching: find.byType(CircularProgressIndicator),
+      );
       final expectedProgress = (trackedSeconds / (goalMinutes * 60)).clamp(
         0.0,
         1.0,
       );
       expect(
-        tester.widget<CircularProgressIndicator>(ringFinder).value,
+        tester.widget<CircularProgressIndicator>(progressFinder).value,
         closeTo(expectedProgress, 0.01),
       );
       expect(
@@ -444,7 +448,19 @@ void main() {
               find.byKey(const ValueKey('today-session-goal-ring-container')),
             )
             .height,
-        220,
+        100,
+      );
+      expect(tester.getSize(ringFinder), const Size(100, 100));
+      expect(tester.getSize(progressFinder), const Size(100, 100));
+      final percentageFinder = find.descendant(
+        of: find.byKey(const ValueKey('today-session-goal-ring-container')),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Text && widget.data?.endsWith('%') == true,
+        ),
+      );
+      expect(
+        tester.getCenter(percentageFinder),
+        tester.getCenter(progressFinder),
       );
       expect(find.text("Today's Session"), findsOneWidget);
       expectNoErrors(tester);
@@ -458,14 +474,23 @@ void main() {
       });
       await pumpProgress(tester, viewport: const Size(320, 720));
 
+      final progressFinder = find.descendant(
+        of: find.byKey(const ValueKey('today-session-goal-ring')),
+        matching: find.byType(CircularProgressIndicator),
+      );
       expect(
         tester
             .getSize(
               find.byKey(const ValueKey('today-session-goal-ring-container')),
             )
             .height,
-        216,
+        88,
       );
+      expect(
+        tester.getSize(find.byKey(const ValueKey('today-session-goal-ring'))),
+        const Size(88, 88),
+      );
+      expect(tester.getSize(progressFinder), const Size(88, 88));
       expectNoErrors(tester);
     });
 
