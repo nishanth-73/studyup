@@ -464,8 +464,18 @@ void main() {
       );
       expect(
         tester.getCenter(ringFinder).dy,
-        lessThan(tester.getCenter(find.text('Check Out')).dy),
-        reason: 'ring sits above the Check In / Check Out controls',
+        tester
+            .getCenter(find.byKey(const ValueKey('today-session-details')))
+            .dy,
+        reason:
+            'ring sits beside and is vertically centered on session details',
+      );
+      expect(
+        tester
+            .getTopRight(find.byKey(const ValueKey('today-session-details')))
+            .dx,
+        lessThan(tester.getTopLeft(ringFinder).dx),
+        reason: 'ring stays to the right of session text',
       );
       expect(find.text("Today's Session"), findsOneWidget);
       expectNoErrors(tester);
@@ -500,7 +510,9 @@ void main() {
         tester
             .getCenter(find.byKey(const ValueKey('today-session-goal-ring')))
             .dy,
-        lessThan(tester.getCenter(find.text('Check Out')).dy),
+        tester
+            .getCenter(find.byKey(const ValueKey('today-session-details')))
+            .dy,
       );
       expectNoErrors(tester);
     });

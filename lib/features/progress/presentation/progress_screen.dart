@@ -452,6 +452,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
               children: [
                 Expanded(
                   child: Column(
+                    key: const ValueKey('today-session-details'),
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
@@ -503,17 +504,18 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(width: 12),
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: _TodayGoalProgressRing(
+                    trackedSeconds: trackedSeconds,
+                    goalMinutes: goalMinutes,
+                    selectedDate: _today,
+                    sessionsRevision: progress.sessions,
+                    size: MediaQuery.sizeOf(context).width < 360 ? 88 : 100,
+                  ),
+                ),
               ],
-            ),
-            const SizedBox(height: 14),
-            Center(
-              child: _TodayGoalProgressRing(
-                trackedSeconds: trackedSeconds,
-                goalMinutes: goalMinutes,
-                selectedDate: _today,
-                sessionsRevision: progress.sessions,
-                size: MediaQuery.sizeOf(context).width < 360 ? 88 : 100,
-              ),
             ),
             const SizedBox(height: 14),
             _CheckInOutButtons(
