@@ -16,8 +16,8 @@ import 'ui_kit.dart';
 /// are shown locked. Tapping a row returns its Monday; Cancel or a
 /// barrier dismiss returns null.
 ///
-/// Used by Progress (compare flow) and Community (week selection) so the
-/// app has one week-picker implementation, not two.
+/// Used by Progress for week comparison so the app has one week-picker
+/// implementation.
 Future<DateTime?> showWeekPickerDialog({
   required BuildContext context,
   required String title,
@@ -66,11 +66,7 @@ Future<DateTime?> showWeekPickerDialog({
                     tooltip: 'Previous month',
                     onTap: canBack
                         ? () => setSheet(() {
-                            month = DateTime(
-                              month.year,
-                              month.month - 1,
-                              1,
-                            );
+                            month = DateTime(month.year, month.month - 1, 1);
                           })
                         : null,
                   ),
@@ -161,12 +157,11 @@ Future<DateTime?> showWeekPickerDialog({
                                         total == 0
                                             ? 'No study time yet'
                                             : '${fmtDur(total)} studied',
-                                        style: AppTextStyles.caption12
-                                            .copyWith(
-                                              color: enabled
-                                                  ? AppColors.textSecondary
-                                                  : AppColors.textMuted,
-                                            ),
+                                        style: AppTextStyles.caption12.copyWith(
+                                          color: enabled
+                                              ? AppColors.textSecondary
+                                              : AppColors.textMuted,
+                                        ),
                                       ),
                                     ],
                                   ),

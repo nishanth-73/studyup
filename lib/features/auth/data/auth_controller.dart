@@ -3,8 +3,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/backend/supabase_client.dart';
-import '../../../core/deeplink/invite_links.dart';
-import '../../avatar/presentation/user_profile_controller.dart';
 import '../../progress/presentation/study_progress_controller.dart';
 import '../../social/data/session_sync.dart';
 import '../../social/data/social_remote.dart';
@@ -113,35 +111,16 @@ final localAccountDataAccessProvider = FutureProvider.family<bool, String>((
   return true;
 });
 
-/// Pending invitation token stashed before sign-in (peeked, not
-/// consumed — the screen that handles it calls takePending). Auto-dispose
-/// so a consumed/cancelled token is never replayed from the cache on a
-/// later startup within the same process.
-final pendingInviteProvider = FutureProvider.autoDispose<String?>((_) {
-  return InviteLinks.peekPending();
-});
-
-/// One-shot post-sign-in linking, safe to watch from the startup gate:
-/// ensures the public profile row, uploads local history once per
-/// account (idempotent, nothing local deleted), then records the link.
-/// Runs silently; offline and logged-out states are no-ops.
+/// One-shot post-sign-in sync, safe to watch from the startup gate:
+/// uploads local history once per account (idempotent, nothing local
+/// deleted), then records the link. Runs silently; offline and
+/// logged-out states are no-ops.
 final postSignInLinkProvider = FutureProvider<void>((ref) async {
   final userId = ref.watch(backendUserIdProvider);
   if (userId == null) return;
   if (!await ref.watch(localAccountDataAccessProvider(userId).future)) return;
   final prefs = await SharedPreferences.getInstance();
   if (prefs.getString(_linkedUserPreferenceKey) == userId) return;
-  final repo = ref.watch(authRepositoryProvider);
-  final profile = ref.watch(userProfileProvider).valueOrNull;
-  if (repo != null && profile != null) {
-    try {
-      await repo.ensureProfileRow(
-        displayName: profile.displayName,
-        avatarId: profile.avatarId,
-        blobVariant: profile.blobVariant,
-      );
-    } catch (_) {}
-  }
   try {
     final sessions = ref.watch(studyProgressProvider).sessions;
     await SessionSyncService(SocialRemote(Supabase.instance.client))

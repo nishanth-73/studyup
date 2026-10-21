@@ -12,10 +12,6 @@
 ///   flutter run --dart-define=SUPABASE_URL=https://xyz.supabase.co \
 ///               --dart-define=SUPABASE_ANON_KEY=eyJ...
 ///
-/// Optional overrides (same precedence):
-///   INVITE_HOST (App Links host; must match AndroidManifest + assetlinks.json)
-///   INVITE_SCHEME (custom-scheme fallback, default: studyup)
-///
 /// The publishable/anon key is safe to embed (RLS enforces access).
 /// The service-role key must NEVER be placed in this app.
 class SupabaseConfig {
@@ -30,26 +26,14 @@ class SupabaseConfig {
     'SUPABASE_ANON_KEY',
     defaultValue: '',
   );
-  static const String _defineInviteHost = String.fromEnvironment(
-    'INVITE_HOST',
-    defaultValue: '',
-  );
-  static const String _defineInviteScheme = String.fromEnvironment(
-    'INVITE_SCHEME',
-    defaultValue: '',
-  );
 
   static String _fileUrl = '';
   static String _fileAnonKey = '';
-  static String _fileInviteHost = '';
-  static String _fileInviteScheme = '';
 
   /// Called once at startup after `dotenv.load()`; dart-defines still win.
   static void loadFileEnv(Map<String, String> env) {
     _fileUrl = (env['SUPABASE_URL'] ?? '').trim();
     _fileAnonKey = (env['SUPABASE_ANON_KEY'] ?? '').trim();
-    _fileInviteHost = (env['INVITE_HOST'] ?? '').trim();
-    _fileInviteScheme = (env['INVITE_SCHEME'] ?? '').trim();
   }
 
   /// Project URL, e.g. https://xyzcompany.supabase.co
@@ -57,22 +41,6 @@ class SupabaseConfig {
 
   /// Publishable (anon) key.
   static String get anonKey => _first(_defineAnonKey, _fileAnonKey);
-
-  /// HTTPS host used for invitation App Links. Defaults to the main
-  /// production domain, which also serves /api/feedback and the hosted
-  /// /.well-known/assetlinks.json; the manifest additionally accepts the
-  /// earlier studyup-feedback-api.vercel.app host and the legacy
-  /// invite.studyup.app host for previously shared links.
-  static String get inviteHost {
-    final v = _first(_defineInviteHost, _fileInviteHost);
-    return v.isEmpty ? 'studyup-4x7z.vercel.app' : v;
-  }
-
-  /// Custom-scheme fallback for invites (works without hosting).
-  static String get inviteScheme {
-    final v = _first(_defineInviteScheme, _fileInviteScheme);
-    return v.isEmpty ? 'studyup' : v;
-  }
 
   static String _first(String a, String b) => a.isNotEmpty ? a : b;
 

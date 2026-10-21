@@ -20,7 +20,7 @@ class NavItemData {
   });
 }
 
-/// Four fully independent circular buttons — no labels, no shared pill,
+/// Three fully independent circular buttons — no labels, no shared pill,
 /// no sliding layer. The selected circle gets the accent background with
 /// the filled icon; the rest stay muted with outline icons.
 class CustomBottomNav extends StatelessWidget {
@@ -46,12 +46,6 @@ class CustomBottomNav extends StatelessWidget {
       route: '/progress',
       label: 'Progress',
     ),
-    NavItemData(
-      outlineAsset: 'assets/icons/community_outline.svg',
-      filledAsset: 'assets/icons/community_filled.svg',
-      route: '/community',
-      label: 'Community',
-    ),
   ];
 
   static const diameter = 56.0;
@@ -67,7 +61,7 @@ class CustomBottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     // Transparent floating row: this widget lives in
     // Scaffold.bottomNavigationBar of an AppShell (extendBody: true), so
-    // the page extends behind it. Only the four circles paint anything —
+    // the page extends behind it. Only the three circles paint anything —
     // the surrounding SafeArea + Padding stay fully transparent.
     return SafeArea(
       top: false,
@@ -76,7 +70,7 @@ class CustomBottomNav extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            for (var i = 0; i < 4; i++) ...[
+            for (var i = 0; i < _items.length; i++) ...[
               if (i > 0) const SizedBox(width: 8),
               _CircleButton(
                 item: _items[i],

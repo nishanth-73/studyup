@@ -4,13 +4,13 @@ import '../theme/app_colors.dart';
 import 'bottom_nav.dart';
 
 /// App-wide page shell: ONE floating bottom navigation shared by every
-/// main-app tab screen (Home, Subjects, Progress, Community).
+/// main-app tab screen (Home, Subjects, Progress).
 /// Profile is a pushed standalone page without the floating nav.
 ///
 /// How the reference floating behavior works:
 /// - [Scaffold.extendBody] is true, so the body extends behind the
 ///   navigation instead of being squeezed above an opaque bar.
-/// - [CustomBottomNav] paints only the four circular buttons; the area
+/// - [CustomBottomNav] paints only the three circular buttons; the area
 ///   around them is fully transparent, so page content shows behind and
 ///   around the controls while scrolling.
 /// - The navigation owns the bottom system inset itself (its own
@@ -24,9 +24,9 @@ import 'bottom_nav.dart';
 /// Do NOT use this shell for onboarding, login, avatar/goal setup,
 /// dialogs, sheets, or detail screens pushed on top.
 class AppShell extends StatelessWidget {
-  /// Index into the nav destinations (0 home, 1 subjects, 2 progress,
-  /// 3 community). Screens without their own destination keep the closest
-  /// highlight (e.g. Plan highlights Home).
+  /// Index into the nav destinations (0 home, 1 subjects, 2 progress).
+  /// Screens without their own destination keep the closest highlight
+  /// (e.g. Plan highlights Home).
   final int currentIndex;
 
   /// Screen content. Must not include its own bottom navigation.

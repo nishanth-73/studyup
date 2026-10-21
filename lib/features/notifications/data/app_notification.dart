@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
 
-/// In-app notification-center item kinds. [taskReminder], [goalReached],
-/// and [community] light the unread indicator; the live entry is a
-/// single per-day logical item whose value updates never flip unread.
-enum CenterItemKind { taskReminder, liveProgress, goalReached, community }
+/// In-app notification-center item kinds. [taskReminder] and [goalReached]
+/// light the unread indicator; the live entry is a single per-day logical
+/// item whose value updates never flip unread.
+enum CenterItemKind { taskReminder, liveProgress, goalReached }
 
 /// One in-app notification-center row, persisted as JSON in
 /// SharedPreferences (the app's existing settings storage).
@@ -12,8 +12,6 @@ enum CenterItemKind { taskReminder, liveProgress, goalReached, community }
 /// - task reminders: `'task:<taskId>'` (same id across edits/reschedules),
 /// - live progress: `'live:<dayKey>'` (one row per local day),
 /// - goal reached: `'goal:<dayKey>'` (at most one per local day).
-/// - community: `'community:<stableId>'` (one row per friend/challenge
-///   event; re-deliveries upsert in place).
 @immutable
 class CenterItem {
   final String id;

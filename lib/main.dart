@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/backend/feedback_config.dart';
 import 'core/backend/supabase_client.dart';
 import 'core/backend/supabase_config.dart';
-import 'core/deeplink/invite_links.dart';
 import 'core/notifications/notification_service.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
@@ -40,18 +39,6 @@ void main() async {
   }
   // Supabase backend (graceful offline when credentials are missing).
   await initBackend();
-  // Invitation deep link that LAUNCHED the app, read BEFORE runApp while
-  // no router exists yet (navigating from a listener before the Router
-  // widget is attached is what made the first tap fail). The code is
-  // stashed as a pending invitation: StartupGate resumes it when the user
-  // is already signed in, and it survives a sign-in when they are not.
-  // Deliberately bounded: a broken link plugin must never stop startup.
-  try {
-    final coldInvite = await InviteLinks.consumeInitialLink();
-    if (coldInvite != null) await InviteLinks.stashPending(coldInvite);
-  } catch (_) {
-    // No invitation link (normal launch) — carry on.
-  }
   runApp(
     ProviderScope(
       // No stretch overscroll anywhere: on Android the stretch effect
@@ -64,11 +51,6 @@ void main() async {
       ),
     ),
   );
-  // Warm links (app already running) start listening once the first frame
-  // is on screen, so appRouter always has a Navigator to navigate.
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    unawaitedInviteLinks();
-  });
 }
 
 /// App root.

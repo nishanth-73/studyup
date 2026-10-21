@@ -14,12 +14,6 @@ import '../../features/profile/presentation/customise_robo_page.dart';
 import '../../features/notifications/presentation/notification_center_screen.dart';
 import '../../features/plan/presentation/plan_screen.dart';
 import '../../features/focus/presentation/focus_screen.dart';
-import '../../features/community/presentation/community_screen.dart';
-import '../../features/community/presentation/friends_screen.dart';
-import '../../features/community/presentation/invite_accept_screen.dart';
-import '../../features/community/presentation/leaderboard_screen.dart';
-import '../../features/community/presentation/recap_screen.dart';
-import '../../features/social/data/social_remote.dart';
 import 'startup_gate.dart';
 
 // Bottom-tab destinations use NoTransitionPage = instant switch, no sliding.
@@ -27,25 +21,12 @@ NoTransitionPage<T> _noSlide<T>(Widget child) =>
     NoTransitionPage<T>(child: child);
 
 final GoRouter appRouter = GoRouter(
-  // Invitation App Links arrive as FULL urls (e.g.
-  // https://studyup-4x7z.vercel.app/i/<code>). By default GoRouter adopts
-  // the platform's initial route verbatim, and no route matches a full
-  // url — the first tap therefore failed with
-  // "GoException: no routes for location: https://…/i/…" (rendered as a
-  // raw error screen) while the second tap worked, because the app was
-  // already running by then. Invitation intake is handled explicitly by
-  // InviteLinks (cold start + warm links), so the platform location is
-  // ignored here and every entry point starts at StartupGate.
+  // Legacy App Links arrive as FULL urls. Ignoring the platform location
+  // starts every entry point at StartupGate instead of surfacing a raw
+  // "no routes for location" error for links that are no longer handled.
   overridePlatformDefaultLocation: true,
   initialLocation: '/',
-  onException: (_, state, router) {
-    final invitationLocation = inviteLocationForUri(state.uri);
-    if (invitationLocation != null) {
-      router.go(invitationLocation);
-      return;
-    }
-    router.go('/');
-  },
+  onException: (_, _, router) => router.go('/'),
   routes: [
     GoRoute(path: '/', builder: (_, _) => const StartupGate()),
     GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
@@ -55,18 +36,6 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(path: '/setup-goal', builder: (_, _) => const SetupGoalScreen()),
     GoRoute(path: '/auth', builder: (_, _) => const StartupGate()),
-    // Invitation landing (deep link / manual). Works logged-out too —
-    // the screen holds the token across sign-in.
-    GoRoute(
-      path: '/invite/:token',
-      builder: (_, s) =>
-          InviteAcceptScreen(token: s.pathParameters['token'] ?? ''),
-    ),
-    GoRoute(
-      path: '/i/:token',
-      redirect: (_, state) =>
-          '/invite/${Uri.encodeComponent(state.pathParameters['token'] ?? 'invalid')}',
-    ),
     ShellRoute(
       builder: (_, state, child) =>
           AuthenticatedRoute(returnTo: state.uri.toString(), child: child),
@@ -118,22 +87,6 @@ final GoRouter appRouter = GoRouter(
           pageBuilder: (_, _) => _noSlide(const PlanScreen()),
         ),
         GoRoute(path: '/focus', builder: (_, _) => const FocusScreen()),
-        GoRoute(
-          path: '/community',
-          pageBuilder: (_, _) => _noSlide(const CommunityScreen()),
-        ),
-        GoRoute(
-          path: '/community/friends',
-          builder: (_, _) => const FriendsScreen(),
-        ),
-        GoRoute(
-          path: '/community/leaderboard',
-          builder: (_, _) => const LeaderboardScreen(),
-        ),
-        GoRoute(
-          path: '/community/recap',
-          builder: (_, _) => const RecapScreen(),
-        ),
       ],
     ),
   ],

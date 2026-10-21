@@ -18,7 +18,6 @@ import '../../../core/widgets/app_shell.dart';
 import '../../../core/widgets/ui_kit.dart';
 import '../../avatar/presentation/user_profile_controller.dart';
 import '../../auth/data/auth_controller.dart';
-import '../../community/presentation/community_controller.dart';
 import '../../home/presentation/home_controller.dart';
 import '../../profile/data/feedback_service.dart';
 import '../../profile/data/feedback_submitter.dart';
@@ -452,8 +451,6 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
     ref.invalidate(subjectsProvider);
     ref.invalidate(studyProgressProvider);
     ref.invalidate(notificationPrefsProvider);
-    ref.invalidate(communityControllerProvider);
-    ref.invalidate(communityStoreProvider);
     ref.invalidate(syncStatusProvider);
     ref.invalidate(roboShellColorProvider);
     ref.invalidate(roboShapeProvider);
@@ -577,15 +574,14 @@ class _PrivacyDataPageState extends ConsumerState<PrivacyDataPage> {
               ),
               line(
                 signedIn
-                    ? 'While you are signed in, your profile, friends and '
-                          'saved study intervals sync to an online database '
-                          'so they follow your account. Only you can read or '
-                          'change your synced records; friends see only the '
-                          'totals you choose to share.'
+                    ? 'While you are signed in, your saved study intervals '
+                          'sync to an online database so they follow your '
+                          'account. Only you can read or change your synced '
+                          'records.'
                     : backendOn
                     ? 'Nothing is uploaded while you are signed out. Sign in '
-                          'to sync your profile, friends and finished study '
-                          'saved study intervals to your account.'
+                          'to sync your finished study intervals to your '
+                          'account.'
                     : 'This build has no account connection; sign-in is '
                           'required before protected data is available.',
               ),

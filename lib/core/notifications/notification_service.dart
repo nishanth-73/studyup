@@ -62,7 +62,6 @@ class NotificationService {
 
   static const taskChannelId = 'studyup_task_reminders';
   static const goalChannelId = 'studyup_goal';
-  static const communityChannelId = 'studyup_community';
 
   /// Stable id shared by the Live Progress tray entry on every platform:
   /// updates replace it, nothing ever stacks a second one.
@@ -205,13 +204,6 @@ class NotificationService {
       'Daily goal',
       description: 'Shown once per day when the study goal is reached.',
       importance: Importance.high,
-    ),
-    AndroidNotificationChannel(
-      communityChannelId,
-      'Community',
-      description:
-          'Friend requests, accepted invitations, and challenge updates.',
-      importance: Importance.defaultImportance,
     ),
   ];
 
@@ -604,55 +596,6 @@ class NotificationService {
     return true;
   }
 
-  /// Records a community event (friend request accepted, challenge
-  /// invitation, milestone) in the in-app center and — when system
-  /// notifications are enabled — as a best-effort OS notification.
-  /// Stable [id] upserts: re-deliveries never duplicate rows or re-alert.
-  Future<void> recordCommunityEvent({
-    required String id,
-    required String title,
-    required String body,
-  }) async {
-    final now = DateTime.now();
-    final items = (await loadCenterItems()).toList();
-    upsertCenterItem(
-      items,
-      CenterItem(
-        id: 'community:$id',
-        kind: CenterItemKind.community,
-        title: title,
-        body: body,
-        at: now,
-        dayKey: notifDateKey(now),
-      ),
-    );
-    await _persistCenterItems(items);
-    final enabled = await systemNotificationsEnabled() ?? true;
-    if (!enabled) return;
-    await _withPlugin(
-      () => _plugin.show(
-        id: id.hashCode & 0x3fffffff,
-        title: title,
-        body: body,
-        notificationDetails: const NotificationDetails(
-          android: AndroidNotificationDetails(
-            communityChannelId,
-            'Community',
-            channelDescription:
-                'Friend requests, accepted invitations, and challenge updates.',
-            importance: Importance.defaultImportance,
-            priority: Priority.defaultPriority,
-            icon: 'ic_stat_studyup',
-            onlyAlertOnce: true,
-          ),
-          iOS: DarwinNotificationDetails(),
-          macOS: DarwinNotificationDetails(),
-        ),
-      ),
-      context: 'while showing community event',
-    );
-  }
-
   // ---------- in-app notification center (SharedPreferences rows) ----------
 
   Future<List<CenterItem>> loadCenterItems() async {
@@ -665,6 +608,9 @@ class NotificationService {
         for (final entry in decoded)
           CenterItem.fromJson(Map<String, Object?>.from(entry! as Map)),
       ];
+      // Community was removed. Hide its legacy rows without rewriting raw
+      // storage; any later normal persist drops them naturally.
+      items.removeWhere((item) => item.id.startsWith('community:'));
       final todayKey = notifDateKey(DateTime.now());
       final before = items.length;
       prunePastTaskItems(items, todayKey);

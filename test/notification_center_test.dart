@@ -183,5 +183,20 @@ void main() {
       final items = await service.loadCenterItems();
       expect(items.map((i) => i.id), ['goal:2026-10-12']);
     });
+
+    test(
+      'legacy community rows stay hidden without rewriting storage',
+      () async {
+        final prefs = await SharedPreferences.getInstance();
+        const raw = '''
+[{"id":"community:friend-1","kind":"taskReminder","title":"Friend","body":"","at":"2026-10-12T10:00:00.000","dayKey":"2026-10-12","read":false},
+ {"id":"goal:2026-10-12","kind":"goalReached","title":"Goal","body":"","at":"2026-10-12T20:00:00.000","dayKey":"2026-10-12","read":true}]''';
+        await prefs.setString('studyup.notif.centerItems.v1', raw);
+        final service = NotificationService.instance;
+        final items = await service.loadCenterItems();
+        expect(items.map((i) => i.id), ['goal:2026-10-12']);
+        expect(prefs.getString('studyup.notif.centerItems.v1'), raw);
+      },
+    );
   });
 }

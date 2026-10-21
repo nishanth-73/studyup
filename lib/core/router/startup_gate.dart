@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../theme/app_colors.dart';
 import '../../features/auth/data/auth_controller.dart';
 import '../../features/auth/presentation/auth_screen.dart';
-import '../../features/community/presentation/invite_accept_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/onboarding/presentation/onboarding_screen.dart';
 import '../../features/avatar/presentation/user_profile_controller.dart';
@@ -53,12 +52,6 @@ class StartupGate extends ConsumerWidget {
           if (authSettled.isLoading) return _startupLoading();
           final signedInUserId = ref.watch(backendUserIdProvider);
           if (signedInUserId == null) return const AuthScreen();
-          final pending = ref.watch(pendingInviteProvider);
-          if (pending.isLoading) return _startupLoading();
-          final token = pending.valueOrNull;
-          if (token != null && token.isNotEmpty) {
-            return InviteAcceptScreen(token: token);
-          }
           final localAccess = ref.watch(
             localAccountDataAccessProvider(signedInUserId),
           );
@@ -85,8 +78,7 @@ class StartupGate extends ConsumerWidget {
   }
 }
 
-/// Route-level auth and local-account guard for protected screens. The
-/// invitation preview route intentionally remains outside this wrapper.
+/// Route-level auth and local-account guard for protected screens.
 class AuthenticatedRoute extends ConsumerWidget {
   final String returnTo;
   final Widget child;

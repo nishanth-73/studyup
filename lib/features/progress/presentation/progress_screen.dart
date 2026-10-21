@@ -681,7 +681,7 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
 
   /// Weeks-only compare popup, mirroring the monthly card's popup
   /// pattern. Delegates to the shared week-picker dialog (same month
-  /// stepper, week rows, totals, and future-lock behavior as Community).
+  /// stepper, week rows, totals, and future-lock behavior).
   Future<DateTime?> _showWeekCompareDialog() {
     final progress = ref.read(studyProgressProvider);
     final now = DateTime.now();

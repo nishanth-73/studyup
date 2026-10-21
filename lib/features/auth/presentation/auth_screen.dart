@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/deeplink/invite_links.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/ui_kit.dart';
@@ -102,22 +101,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     }
   }
 
-  /// Post-auth linking: attach the local profile to the account, sync
-  /// local history (idempotent, nothing deleted), then resume a pending
-  /// invitation if one is waiting.
+  /// Post-auth linking: attach the local profile to the account, then
+  /// sync local history (idempotent, nothing deleted).
   Future<void> _afterAuth({required String email}) async {
     final repo = _repo;
-    final local = ref.read(userProfileProvider).valueOrNull;
-    if (repo != null && local != null) {
-      try {
-        await repo.ensureProfileRow(
-          displayName: local.displayName,
-          avatarId: local.avatarId,
-          blobVariant: local.blobVariant,
-        );
-      } catch (error) {
-        debugPrint('[auth] profile sync failed after sign-in: $error');
-      }
+    if (repo != null) {
       try {
         final sessions = ref.read(studyProgressProvider).sessions;
         await SessionSyncService(SocialRemote(repo.client)).syncAll(sessions);
@@ -132,11 +120,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     } catch (error) {
       debugPrint('[auth] local account link failed after sign-in: $error');
     }
-    final pending = await InviteLinks.takePending();
     if (!mounted) return;
-    if (pending != null && pending.isNotEmpty) {
-      context.go('/invite/${Uri.encodeComponent(pending)}');
-    } else if (_safeReturnPath(widget.returnTo) != null) {
+    if (_safeReturnPath(widget.returnTo) != null) {
       context.go(_safeReturnPath(widget.returnTo)!);
     } else {
       context.go('/home');
@@ -187,7 +172,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   /// Google OAuth: launches the system browser; Supabase redirects to
   /// the native auth callback and supabase_flutter completes sign-in
   /// automatically. Success is observed via auth state, which routes
-  /// home (plus profile link + pending-invite resume) from there.
+  /// home (plus the profile link) from there.
   Future<void> _googleSignIn() async {
     final repo = _repo;
     if (repo == null || _busy) return;

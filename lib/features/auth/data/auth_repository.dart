@@ -21,9 +21,9 @@ class AuthResult {
 /// Supabase Auth for real accounts (email/password + verification).
 ///
 /// Guest/local data is never touched here: sign-in only attaches an
-/// identity; session/port history migration is handled explicitly by
-/// [SessionSyncService.syncAfterSignIn]. Passwords are never stored —
-/// Supabase Auth holds the credentials server-side.
+/// identity; session history migration is handled explicitly by
+/// `SessionSyncService.syncAll`. Passwords are never stored — Supabase
+/// Auth holds the credentials server-side.
 class AuthRepository {
   AuthRepository(this._client);
 
@@ -161,24 +161,5 @@ class AuthRepository {
 
   Future<void> signOut() async {
     await _client.auth.signOut();
-  }
-
-  /// Ensures a public profile row exists for the current user (the DB
-  /// trigger normally creates it; this is a safe idempotent repair).
-  Future<void> ensureProfileRow({
-    required String displayName,
-    required String avatarId,
-    required int blobVariant,
-  }) async {
-    final user = currentUser;
-    if (user == null) return;
-    await _client.from('community_profiles').upsert({
-      'id': user.id,
-      'display_name': displayName.trim().isEmpty
-          ? 'Student'
-          : displayName.trim(),
-      'avatar_id': avatarId,
-      'blob_variant': blobVariant,
-    }, onConflict: 'id');
   }
 }

@@ -21,39 +21,15 @@ void main() {
       expect(SupabaseConfig.anonKey, isEmpty);
     });
 
-    test('invite host defaults to the main production domain', () {
-      // No .env / dart-define: the compiled-in default is what ships.
-      expect(SupabaseConfig.inviteHost, 'studyup-4x7z.vercel.app');
-      expect(SupabaseConfig.inviteScheme, isNotEmpty);
-    });
-
-    test('a generated invite link points at the production domain', () {
-      final raw = newInviteToken();
-      final link = inviteLinkFor(raw);
-      expect(link, 'https://studyup-4x7z.vercel.app/i/$raw');
-      expect(link, startsWith('https://'));
-      expect(link, isNot(contains('6030s-projects')));
-      expect(link, isNot(contains('SUP1')));
-      // The code round-trips through the link (recipient lands on the
-      // invitation screen with exactly this token).
-      expect(parseInviteToken(Uri.parse(link)), raw);
-      // Share text carries that clean URL only.
-      final message = inviteShareMessage(link);
-      expect(message, contains(link));
-      expect(message, isNot(contains('SUP1')));
-    });
-
     test('.env values apply when dart-defines are absent', () {
       SupabaseConfig.loadFileEnv({
         'SUPABASE_URL': 'https://abc.supabase.co',
         'SUPABASE_ANON_KEY': 'anon-key',
-        'INVITE_HOST': 'invite.example.com',
       });
       addTearDown(() => SupabaseConfig.loadFileEnv(const {}));
       expect(SupabaseConfig.isConfigured, isTrue);
       expect(SupabaseConfig.url, 'https://abc.supabase.co');
       expect(SupabaseConfig.anonKey, 'anon-key');
-      expect(SupabaseConfig.inviteHost, 'invite.example.com');
     });
 
     test('placeholder and example values never count as configured', () {
@@ -63,73 +39,6 @@ void main() {
       });
       addTearDown(() => SupabaseConfig.loadFileEnv(const {}));
       expect(SupabaseConfig.isConfigured, isFalse);
-    });
-  });
-
-  group('invitation tokens', () {
-    test('generated tokens are 128-bit hex and unique', () {
-      final a = newInviteToken();
-      final b = newInviteToken();
-      expect(a.length, 32);
-      expect(RegExp(r'^[0-9a-f]{32}$').hasMatch(a), isTrue);
-      expect(a, isNot(equals(b)));
-    });
-
-    test('hash is deterministic SHA-256 hex', () {
-      expect(hashInviteToken('abc'), hashInviteToken('abc'));
-      expect(hashInviteToken('abc').length, 64);
-      expect(hashInviteToken('abc'), isNot(equals(hashInviteToken('abd'))));
-    });
-
-    test('links embed the token under /i/', () {
-      const raw = 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef12';
-      expect(
-        inviteLinkFor(raw, host: 'invite.example.com'),
-        'https://invite.example.com/i/$raw',
-      );
-      expect(() => inviteLinkFor('SUP1-encoded-payload'), throwsArgumentError);
-    });
-
-    test('share message contains only the friendly text and invite URL', () {
-      const link =
-          'https://invite.example.com/i/abcdef1234567890abcdef1234567890';
-      final message = inviteShareMessage(link);
-      expect(
-        message,
-        "Join me on StudyUp! Let's track our study progress and compete together: $link",
-      );
-      expect(message, isNot(contains('SUP1-')));
-      expect(message, isNot(contains('"uid"')));
-    });
-
-    test('parses App Links and custom-scheme URLs', () {
-      const raw = 'abcdef1234567890abcdef1234567890';
-      expect(
-        parseInviteToken(Uri.parse('https://invite.studyup.app/i/$raw')),
-        raw,
-      );
-      expect(
-        parseInviteToken(Uri.parse('https://invite.studyup.app/invite/$raw/')),
-        raw,
-      );
-      expect(
-        parseInviteToken(Uri.parse('https://other.example/i/$raw')),
-        raw, // host never matters; the token + server validation do
-      );
-      expect(parseInviteToken(Uri.parse('studyup://invite/$raw')), raw);
-      expect(parseInviteToken(Uri.parse('studyup:///i/$raw')), raw);
-    });
-
-    test('routes malformed short tokens to app validation', () {
-      expect(parseInviteToken(Uri.parse('https://x.test/i/')), isNull);
-      expect(parseInviteToken(Uri.parse('https://x.test/x/abc')), isNull);
-      expect(parseInviteToken(Uri.parse('https://x.test/i/short')), 'short');
-      expect(parseInviteToken(Uri.parse('studyup://invite/')), isNull);
-      expect(parseInviteToken(Uri.parse('mailto:a@b.c')), isNull);
-      expect(
-        parseInviteToken(Uri.parse('https://x.test/i/NOT-HEX!!')),
-        'NOT-HEX!!',
-      );
     });
   });
 

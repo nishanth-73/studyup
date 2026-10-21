@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:studyup/core/widgets/date_picker_sheet.dart';
 
-/// Contract tests for the shared bottom-sheet pickers used across Home,
-/// Progress and Community:
+/// Contract tests for the shared bottom-sheet pickers used across Home
+/// and Progress:
 /// - calendar sheet: in-range days selectable, out-of-range days and
 ///   month navigation locked at the bounds, Done/Cancel semantics,
 ///   TODAY marker driven by the real current date;
@@ -43,10 +43,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
   }
 
-  Finder inSheet(Finder matching) => find.descendant(
-    of: find.byType(PickerSheetFrame),
-    matching: matching,
-  );
+  Finder inSheet(Finder matching) =>
+      find.descendant(of: find.byType(PickerSheetFrame), matching: matching);
 
   Future<void> tapAndSettle(WidgetTester tester, Finder finder) async {
     await tester.tap(finder);

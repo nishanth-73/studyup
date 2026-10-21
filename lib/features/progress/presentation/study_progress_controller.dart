@@ -671,7 +671,7 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
       // No explicit upload here: the ended session is picked up immediately
       // by sessionSyncTriggerProvider, which StudyUpApp keeps alive for the
       // whole app lifetime (watching it only from the startup gate left
-      // finished sessions stranded on the device, so friends saw 0m).
+      // finished sessions stranded on the device).
     });
   }
 

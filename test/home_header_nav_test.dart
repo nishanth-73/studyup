@@ -15,8 +15,7 @@ import 'package:studyup/features/profile/presentation/profile_screen.dart';
 /// Home header composition + bottom navigation contract:
 /// - top-left PNG avatar opens Profile (single Profile entry point),
 /// - top-right bell opens the in-app notification center,
-/// - the bottom navigation's fourth circle is the Community destination
-///   (the former Quiz tab was replaced; see `app_router.dart`).
+/// - the bottom navigation has exactly Home, Subjects, and Progress.
 void main() {
   GoRouter testRouter() {
     final router = GoRouter(
@@ -158,17 +157,17 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('bottom nav has no Quiz tab and Community is the fourth circle', (
+  testWidgets('bottom nav has exactly Home, Subjects, and Progress', (
     tester,
   ) async {
     await pumpHome(tester);
-    // No Add action circle remains, and the former Quiz tab is gone:
-    // the fourth circle is Community now (see `app_router.dart`).
+    // No Add action or Quiz tab remains, and Community is gone.
     expect(find.bySemanticsLabel('Add'), findsNothing);
     expect(find.bySemanticsLabel('Quiz'), findsNothing);
+    expect(find.bySemanticsLabel('Community'), findsNothing);
     final nav = find.byType(CustomBottomNav);
     expect(nav, findsOneWidget);
-    for (final label in const ['Home', 'Subjects', 'Progress', 'Community']) {
+    for (final label in const ['Home', 'Subjects', 'Progress']) {
       expect(
         find.descendant(of: nav, matching: find.bySemanticsLabel(label)),
         findsOneWidget,

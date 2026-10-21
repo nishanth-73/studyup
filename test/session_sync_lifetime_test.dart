@@ -13,21 +13,16 @@ import 'package:studyup/features/social/data/social_remote.dart';
 import 'package:studyup/features/social/data/session_sync.dart';
 import 'package:studyup/main.dart';
 
-/// Production bug: friends saw 0m / "waiting" for real study time.
+/// Production bug: finished study time could stay stranded on the device.
 ///
 /// The upload trigger was watched only by the startup gate ('/'), which
-/// unmounts the moment the router navigates to /home or /community — so a
-/// session that ended anywhere else in the app never reached Supabase and
-/// every friend's weekly total read 0. These tests pin that a finished
-/// session uploads while the app is running, whatever route is mounted.
+/// unmounts the moment the router navigates to /home or /subjects — so a
+/// session that ended anywhere else in the app never reached Supabase.
+/// These tests pin that a finished session uploads while the app is
+/// running, whatever route is mounted.
 class _RecordingRemote extends SocialRemote {
   _RecordingRemote()
-    : client = SupabaseClient(
-        'https://example.supabase.co',
-        'test-anon-key',
-        authOptions: const AuthClientOptions(autoRefreshToken: false),
-      ),
-      super(
+    : super(
         SupabaseClient(
           'https://example.supabase.co',
           'test-anon-key',
@@ -35,7 +30,6 @@ class _RecordingRemote extends SocialRemote {
         ),
       );
 
-  final SupabaseClient client;
   final uploaded = <String>[];
   final uploadedSessions = <StudySession>[];
 
@@ -49,20 +43,6 @@ class _RecordingRemote extends SocialRemote {
     uploaded.add(session.id);
     uploadedSessions.add(session);
   }
-
-  @override
-  Future<List<RemoteFriend>> myFriends() async => const [];
-
-  @override
-  Future<List<RemoteBoardRow>> leaderboard({
-    required DateTime weekStart,
-  }) async => const [];
-
-  @override
-  RealtimeChannel subscribeFriendships(
-    void Function() onChange, {
-    void Function(RealtimeSubscribeStatus status, Object? error)? onStatus,
-  }) => client.channel('friendships');
 }
 
 class _BlockingRemote extends _RecordingRemote {

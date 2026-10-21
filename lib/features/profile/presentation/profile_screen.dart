@@ -155,7 +155,7 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
-/// Honest empty state: no profile yet, so invite setup instead of
+/// Honest empty state: no profile yet, so prompt setup instead of
 /// showing a placeholder name or a random avatar.
 class _SetupProfileTile extends StatelessWidget {
   final VoidCallback onTap;
