@@ -51,3 +51,7 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Web / Node / Vite
+node_modules/
+dist/

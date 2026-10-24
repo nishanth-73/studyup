@@ -1,13 +1,23 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "dist",
   "functions": {
     "api/feedback.js": {
+      "maxDuration": 10
+    },
+    "api/config.js": {
       "maxDuration": 10
     }
   },
   "rewrites": [
     { "source": "/i/:token", "destination": "/index.html" },
-    { "source": "/invite/:token", "destination": "/index.html" }
+    { "source": "/invite/:token", "destination": "/index.html" },
+    { "source": "/about", "destination": "/index.html" },
+    { "source": "/contact", "destination": "/index.html" },
+    { "source": "/privacy", "destination": "/index.html" },
+    { "source": "/community", "destination": "/index.html" },
+    { "source": "/community/:path*", "destination": "/index.html" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
