@@ -50,37 +50,33 @@ class SocialRemote {
     return id;
   }
 
-  /// Idempotent session upload: stable local ids are the PK, so retries
-  /// and re-syncs never duplicate rows.
+  /// Idempotent session upload to the baseline `sessions` table.
+  /// Stable local ids are the PK, so retries and re-syncs never duplicate rows.
   Future<void> upsertSession(StudySession session) async {
-    final segments = [
-      for (final s in session.studySegments)
-        if (s.endTime != null)
-          {
-            's': s.startTime.toUtc().toIso8601String(),
-            'e': s.endTime!.toUtc().toIso8601String(),
-          },
-    ];
-    if (segments.isEmpty) return;
-    await _client.from('study_sessions').upsert({
+    int totalMinutes = 0;
+    for (final seg in session.studySegments) {
+      if (seg.endTime != null) {
+        totalMinutes += (seg.endTime!.difference(seg.startTime).inSeconds / 60).round();
+      }
+    }
+    if (totalMinutes == 0 && session.studySegments.any((s) => s.endTime != null)) {
+      totalMinutes = 1;
+    }
+    if (totalMinutes <= 0 && session.checkOutTime == null) return;
+
+    await _client.from('sessions').upsert({
       'id': session.id,
       'user_id': _uid,
-      'subject_id': session.subjectId,
-      'subject_name': session.subjectName,
-      'check_in': session.checkInTime.toUtc().toIso8601String(),
-      'check_out': session.checkOutTime?.toUtc().toIso8601String(),
-      'paused_seconds': session.pausedSeconds,
-      'segments': segments,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
+      'started_at': session.checkInTime.toUtc().toIso8601String(),
+      'duration_minutes': totalMinutes > 0 ? totalMinutes : 1,
+      'completed': session.checkOutTime != null,
     }, onConflict: 'id');
-    for (final d in splitSessionDays(session)) {
-      await _client.from('session_days').upsert({
-        'session_id': session.id,
+
+    // Trigger an activity ping for realtime friend updates
+    try {
+      await _client.from('activity_pings').insert({
         'user_id': _uid,
-        'day': d['day'],
-        'day_start_utc': d['day_start_utc'],
-        'seconds': d['seconds'],
-      }, onConflict: 'session_id,day');
-    }
+      });
+    } catch (_) {}
   }
 }

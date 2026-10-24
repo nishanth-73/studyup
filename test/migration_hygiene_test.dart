@@ -13,12 +13,12 @@ void main() {
   late String f4;
 
   setUpAll(() {
-    f1 = File('supabase/migrations/20261015_community.sql').readAsStringSync();
-    f2 = File('supabase/migrations/20261102_social_backend.sql')
+    f1 = File('supabase/_archive/20261015_community.sql').readAsStringSync();
+    f2 = File('supabase/_archive/20261102_social_backend.sql')
         .readAsStringSync();
-    f3 = File('supabase/migrations/20261104_hardening_fix.sql')
+    f3 = File('supabase/_archive/20261104_hardening_fix.sql')
         .readAsStringSync();
-    f4 = File('supabase/migrations/20261112_friends_zero_progress.sql')
+    f4 = File('supabase/_archive/20261112_friends_zero_progress.sql')
         .readAsStringSync();
   });
 

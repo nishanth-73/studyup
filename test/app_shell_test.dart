@@ -9,6 +9,7 @@ import 'package:studyup/features/home/presentation/home_screen.dart';
 import 'package:studyup/features/plan/presentation/plan_screen.dart';
 import 'package:studyup/features/progress/presentation/progress_screen.dart';
 import 'package:studyup/features/subjects/presentation/subjects_screen.dart';
+import 'package:studyup/features/community/presentation/community_screen.dart';
 
 /// The floating-nav contract: every main-app screen renders through the
 /// single shared [AppShell] (extendBody overlay, transparent surround),
@@ -44,6 +45,7 @@ void main() {
           GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
           GoRoute(path: '/subjects', builder: (_, _) => const SubjectsScreen()),
           GoRoute(path: '/progress', builder: (_, _) => const ProgressScreen()),
+          GoRoute(path: '/community', builder: (_, _) => const CommunityScreen()),
           GoRoute(path: '/plan', builder: (_, _) => const PlanScreen()),
         ],
       );
@@ -82,7 +84,7 @@ void main() {
 
     // Profile is a pushed standalone page without the floating nav,
     // so it is intentionally not in this shell contract.
-    for (final location in ['/home', '/subjects', '/progress', '/plan']) {
+    for (final location in ['/home', '/subjects', '/progress', '/community', '/plan']) {
       testWidgets('$location renders single shared nav', (tester) async {
         await pumpRoute(tester, location);
         expectShellContract(tester);

@@ -24,7 +24,7 @@ import 'bottom_nav.dart';
 /// Do NOT use this shell for onboarding, login, avatar/goal setup,
 /// dialogs, sheets, or detail screens pushed on top.
 class AppShell extends StatelessWidget {
-  /// Index into the nav destinations (0 home, 1 subjects, 2 progress).
+  /// Index into the nav destinations (0 home, 1 subjects, 2 progress, 3 community).
   /// Screens without their own destination keep the closest highlight
   /// (e.g. Plan highlights Home).
   final int currentIndex;

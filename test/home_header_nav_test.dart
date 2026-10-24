@@ -157,17 +157,17 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('bottom nav has exactly Home, Subjects, and Progress', (
+  testWidgets('bottom nav has Home, Subjects, Progress, and Community', (
     tester,
   ) async {
     await pumpHome(tester);
     // No Add action or Quiz tab remains, and Community is gone.
     expect(find.bySemanticsLabel('Add'), findsNothing);
     expect(find.bySemanticsLabel('Quiz'), findsNothing);
-    expect(find.bySemanticsLabel('Community'), findsNothing);
+
     final nav = find.byType(CustomBottomNav);
     expect(nav, findsOneWidget);
-    for (final label in const ['Home', 'Subjects', 'Progress']) {
+    for (final label in const ['Home', 'Subjects', 'Progress', 'Community']) {
       expect(
         find.descendant(of: nav, matching: find.bySemanticsLabel(label)),
         findsOneWidget,

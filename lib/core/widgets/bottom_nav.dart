@@ -11,16 +11,18 @@ class NavItemData {
   final String filledAsset;
   final String route;
   final String label;
+  final IconData? icon;
 
   const NavItemData({
-    required this.outlineAsset,
-    required this.filledAsset,
+    this.outlineAsset = '',
+    this.filledAsset = '',
+    this.icon,
     required this.route,
     required this.label,
   });
 }
 
-/// Three fully independent circular buttons — no labels, no shared pill,
+/// Four fully independent circular buttons — no labels, no shared pill,
 /// no sliding layer. The selected circle gets the accent background with
 /// the filled icon; the rest stay muted with outline icons.
 class CustomBottomNav extends StatelessWidget {
@@ -46,6 +48,12 @@ class CustomBottomNav extends StatelessWidget {
       route: '/progress',
       label: 'Progress',
     ),
+    NavItemData(
+      outlineAsset: 'assets/icons/community_outline.svg',
+      filledAsset: 'assets/icons/community_filled.svg',
+      route: '/community',
+      label: 'Community',
+    ),
   ];
 
   static const diameter = 56.0;
@@ -61,7 +69,7 @@ class CustomBottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     // Transparent floating row: this widget lives in
     // Scaffold.bottomNavigationBar of an AppShell (extendBody: true), so
-    // the page extends behind it. Only the three circles paint anything —
+    // the page extends behind it. Only the circles paint anything —
     // the surrounding SafeArea + Padding stay fully transparent.
     return SafeArea(
       top: false,
@@ -123,15 +131,21 @@ class _CircleButton extends StatelessWidget {
             ],
           ),
           child: Center(
-            child: SvgPicture.asset(
-              active ? item.filledAsset : item.outlineAsset,
-              width: CustomBottomNav._iconSize,
-              height: CustomBottomNav._iconSize,
-              colorFilter: ColorFilter.mode(
-                active ? AppColors.onCta : AppColors.textSecondary,
-                BlendMode.srcIn,
-              ),
-            ),
+            child: item.outlineAsset.isNotEmpty
+                ? SvgPicture.asset(
+                    active ? item.filledAsset : item.outlineAsset,
+                    width: CustomBottomNav._iconSize,
+                    height: CustomBottomNav._iconSize,
+                    colorFilter: ColorFilter.mode(
+                      active ? AppColors.onCta : AppColors.textSecondary,
+                      BlendMode.srcIn,
+                    ),
+                  )
+                : Icon(
+                    active ? Icons.groups_rounded : (item.icon ?? Icons.groups_outlined),
+                    size: CustomBottomNav._iconSize,
+                    color: active ? AppColors.onCta : AppColors.textSecondary,
+                  ),
           ),
         ),
       ),

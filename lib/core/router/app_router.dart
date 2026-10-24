@@ -14,6 +14,8 @@ import '../../features/profile/presentation/customise_robo_page.dart';
 import '../../features/notifications/presentation/notification_center_screen.dart';
 import '../../features/plan/presentation/plan_screen.dart';
 import '../../features/focus/presentation/focus_screen.dart';
+import '../../features/community/presentation/community_screen.dart';
+import '../../features/community/presentation/full_leaderboard_screen.dart';
 import 'startup_gate.dart';
 
 // Bottom-tab destinations use NoTransitionPage = instant switch, no sliding.
@@ -56,6 +58,25 @@ final GoRouter appRouter = GoRouter(
         GoRoute(
           path: '/progress',
           pageBuilder: (_, _) => _noSlide(const ProgressScreen()),
+        ),
+        GoRoute(
+          path: '/community',
+          pageBuilder: (_, _) => _noSlide(const CommunityScreen()),
+        ),
+        GoRoute(
+          path: '/community/leaderboard',
+          builder: (_, _) {
+            final now = DateTime.now();
+            final today = DateTime(now.year, now.month, now.day);
+            return FullLeaderboardScreen(
+              members: const [],
+              weekLabel: 'This week',
+            );
+          },
+        ),
+        GoRoute(
+          path: '/community/friends',
+          redirect: (_, _) => '/community',
         ),
         GoRoute(
           path: '/profile',

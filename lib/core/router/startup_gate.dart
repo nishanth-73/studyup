@@ -91,6 +91,9 @@ class AuthenticatedRoute extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (returnTo.startsWith('/community')) {
+      return child;
+    }
     final authSettled = ref.watch(authSettledProvider);
     return authSettled.when(
       loading: _startupLoading,
