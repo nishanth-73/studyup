@@ -3,25 +3,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_shell.dart';
 import '../../../core/widgets/week_picker_dialog.dart';
+import '../../../core/widgets/weekly_study_time_card.dart';
 import '../../avatar/data/user_profile.dart';
 import '../../avatar/presentation/avatar_widgets.dart';
 import '../../avatar/presentation/user_profile_controller.dart';
+import '../../progress/presentation/study_progress_controller.dart';
 import '../data/community_models.dart';
 import 'community_providers.dart';
 import 'full_leaderboard_screen.dart';
 import 'week_detail_dialog.dart';
 
-/// Production-ready StudyUP Community screen:
+/// Production StudyUP Community screen:
 /// 1. Top bar with Title + compact week picker in top-right (no extra icon).
 /// 2. Top 3 Leaderboard Podium Card (1st place GREEN, 2nd BLUE, 3rd PINK, real profile avatars).
 /// 3. My Today's Session Card (today study time, completed sessions, streak).
-/// 4. Weekly Comparison Card (You vs Top Friend).
+/// 4. Weekly Progress/Comparison Card: Reuses the exact WeeklyStudyTimeCard from Insights.
 /// 5. Leaderboard Card (Top 5 preview, "YOU" highlight, tap for week detail, "See all" action).
-/// 6. Native device sharing for invitations with Web Share API and Clipboard fallback.
+/// 6. Exactly ONE clear 'Invite Friends' button at the very bottom of the content.
+/// 7. Smooth natural scrolling matching Home and Insights screens.
 class CommunityScreen extends ConsumerStatefulWidget {
   const CommunityScreen({super.key});
 
@@ -97,14 +101,10 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
           'Join my calm study circle on StudyUp: Focus on your goals. Grow together.\n$inviteUrl';
 
       try {
-        final result = await Share.share(
-          shareText,
-        );
-        // If user cancelled or dismissed, do nothing (no false error)
+        final result = await Share.share(shareText);
         if (result.status == ShareResultStatus.dismissed) return;
         if (result.status == ShareResultStatus.success) return;
       } catch (_) {
-        // Native share sheet failed or unsupported: fallback to clipboard
         await Clipboard.setData(ClipboardData(text: inviteUrl));
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -137,7 +137,6 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
     return '${months[monday.month - 1]} ${monday.day} – ${months[sunday.month - 1]} ${sunday.day}';
   }
 
-  /// Resolves actual selected avatar portrait from user profile, or falls back to initials.
   Widget _buildAvatarWidget({
     required CommunityMember? member,
     required double radius,
@@ -159,7 +158,6 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
       );
     }
 
-    // Current user's selected profile avatar has priority
     String? avatarId = member.avatarUrl;
     if (member.isCurrentUser) {
       final userProfile = ref.watch(userProfileProvider).valueOrNull;
@@ -172,7 +170,6 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
       return UserAvatar(avatarId: avatarId, size: radius * 2);
     }
 
-    // Graceful fallback: circle avatar with initials
     return CircleAvatar(
       radius: radius,
       backgroundColor: member.avatarColor.withValues(alpha: 0.25),
@@ -216,13 +213,11 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                     physics: const AlwaysScrollableScrollPhysics(
                       parent: BouncingScrollPhysics(),
                     ),
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
                     children: [
-                      // ========================================================
                       // 1. TOP BAR (Title + Compact Week Picker, NO extra icon)
-                      // ========================================================
                       _buildTopBar(weekLabel, selectedMonday, homeAsync.valueOrNull),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
 
                       // Async content branch
                       ...homeAsync.when(
@@ -238,7 +233,9 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                           Center(
                             child: Text(
                               'Loading community...',
-                              style: AppTextStyles.caption12.copyWith(color: AppColors.textSecondary),
+                              style: AppTextStyles.caption12.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
                             ),
                           ),
                         ],
@@ -248,7 +245,9 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                             decoration: BoxDecoration(
                               color: AppColors.surface,
                               borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: AppColors.track.withValues(alpha: 0.3)),
+                              border: Border.all(
+                                color: AppColors.track.withValues(alpha: 0.3),
+                              ),
                             ),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -270,11 +269,13 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                               ],
                             ),
                           ),
+                          const SizedBox(height: 16),
+                          _buildInviteFriendsButton(),
                         ],
                         data: (homeData) => _buildCommunitySections(homeData, weekLabel, selectedMonday),
                       ),
 
-                      // Scroll clearance for the floating navigation
+                      // Scroll clearance above the floating navigation
                       SizedBox(height: AppShell.scrollClearance(context)),
                     ],
                   ),
@@ -296,37 +297,32 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
     final currentUser = homeData.me;
     final topFriend = homeData.topFriend;
 
-    // Top 3 for podium
     final first = members.isNotEmpty ? members[0] : null;
     final second = members.length > 1 ? members[1] : null;
     final third = members.length > 2 ? members[2] : null;
 
-    // Top 5 for leaderboard preview
     final top5Members = members.take(5).toList();
 
     return [
-      // ========================================================
       // 2. TOP 3 LEADERBOARD PODIUM CARD
-      // ========================================================
       _buildPodiumCard(first, second, third, homeData.hasFriends, selectedMonday),
-      const SizedBox(height: 12),
+      const SizedBox(height: 14),
 
-      // ========================================================
       // 3. TODAY'S SESSION CARD (Real focus summary)
-      // ========================================================
       _buildTodaySessionCard(homeData.meToday, homeData.meWeekly.streak),
-      const SizedBox(height: 12),
+      const SizedBox(height: 14),
 
-      // ========================================================
-      // 4. WEEKLY COMPARISON CARD (You vs Top Friend)
-      // ========================================================
-      _buildWeeklyComparisonCard(currentUser, topFriend, homeData.hasFriends),
-      const SizedBox(height: 12),
+      // 4. WEEKLY PROGRESS / COMPARISON CARD (Reuses WeeklyStudyTimeCard from Insights)
+      _buildWeeklyComparisonCard(currentUser, topFriend, homeData.hasFriends, selectedMonday),
+      const SizedBox(height: 14),
 
-      // ========================================================
       // 5. LEADERBOARD CARD (Top 5 + "See all" action)
-      // ========================================================
       _buildLeaderboardCard(top5Members, members, weekLabel, selectedMonday),
+      const SizedBox(height: 16),
+
+      // 6. EXACTLY ONE 'Invite Friends' BUTTON at the very bottom
+      _buildInviteFriendsButton(),
+      const SizedBox(height: 14),
     ];
   }
 
@@ -350,7 +346,6 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
             ),
           ],
         ),
-        // Compact week picker button ONLY (extra icon removed)
         Material(
           color: Colors.transparent,
           child: InkWell(
@@ -528,7 +523,6 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Crown / star icon for 1st place (GREEN)
           if (isWinner)
             const Padding(
               padding: EdgeInsets.only(bottom: 3),
@@ -541,7 +535,6 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
           else
             const SizedBox(height: 12),
 
-          // User-selected avatar with place ring
           Stack(
             alignment: Alignment.center,
             children: [
@@ -549,18 +542,9 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: accentColor,
+                    color: accentColor.withValues(alpha: isWinner ? 0.9 : 0.6),
                     width: isWinner ? 2.5 : 2.0,
                   ),
-                  boxShadow: isWinner
-                      ? [
-                          BoxShadow(
-                            color: accentColor.withValues(alpha: 0.35),
-                            blurRadius: 10,
-                            spreadRadius: 1,
-                          ),
-                        ]
-                      : null,
                 ),
                 child: _buildAvatarWidget(
                   member: member,
@@ -568,27 +552,19 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                   fallbackColor: accentColor,
                 ),
               ),
-              // Place badge pill
               Positioned(
-                bottom: -2,
+                bottom: 0,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                   decoration: BoxDecoration(
                     color: accentColor,
                     borderRadius: BorderRadius.circular(10),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
                   ),
                   child: Text(
                     '#$place',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 9,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w900,
                       color: AppColors.onCta,
                     ),
                   ),
@@ -596,45 +572,33 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 7),
 
-          // Display Name
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Flexible(
-                child: Text(
-                  member?.isCurrentUser == true ? 'You' : name,
-                  style: AppTextStyles.caption12Bold.copyWith(
-                    color: member?.isCurrentUser == true
-                        ? (isWinner ? AppColors.green : AppColors.cta)
-                        : AppColors.textPrimary,
-                    fontWeight: isWinner ? FontWeight.w800 : FontWeight.w700,
-                    fontSize: 11,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 1),
-
-          // Study Time
           Text(
-            time,
-            style: AppTextStyles.caption12.copyWith(
-              fontSize: 10,
-              color: isWinner ? AppColors.green : AppColors.textSecondary,
-              fontWeight: isWinner ? FontWeight.w700 : FontWeight.w500,
+            name,
+            style: AppTextStyles.body14Bold.copyWith(
+              fontSize: isWinner ? 13 : 12,
+              color: isWinner ? AppColors.textPrimary : AppColors.textSecondary,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 1),
 
-          // Pedestal block
+          Text(
+            time,
+            style: AppTextStyles.caption12.copyWith(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: accentColor,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+
           Container(
             height: pedestalHeight,
             width: double.infinity,
@@ -644,7 +608,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                 end: Alignment.bottomCenter,
                 colors: [
                   accentColor.withValues(alpha: isWinner ? 0.35 : 0.20),
-                  accentColor.withValues(alpha: 0.04),
+                  AppColors.surface2,
                 ],
               ),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
@@ -743,70 +707,55 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
   }
 
   // --------------------------------------------------------------------------
-  // 4. WEEKLY COMPARISON CARD (You vs Top Friend)
+  // 4. WEEKLY PROGRESS / COMPARISON CARD
+  // Reuses the exact WeeklyStudyTimeCard component from the Insights screen.
   // --------------------------------------------------------------------------
   Widget _buildWeeklyComparisonCard(
     CommunityMember me,
     CommunityMember? topFriend,
     bool hasFriends,
+    DateTime selectedMonday,
   ) {
+    final studyProgress = ref.watch(studyProgressProvider);
+    final userWeekMinutes = studyProgress.minutesByWeekday(selectedMonday);
+    final dailyGoal = studyProgress.dailyStudyGoalMinutes;
+
     if (!hasFriends || topFriend == null) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.track.withValues(alpha: 0.35)),
+      return WeeklyStudyTimeCard(
+        monday: selectedMonday,
+        weekMinutes: userWeekMinutes,
+        dailyGoalMinutes: dailyGoal,
+        title: 'Weekly Comparison',
+        leadingIcon: const Icon(
+          Icons.compare_arrows_rounded,
+          size: 16,
+          color: AppColors.primary,
         ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.compare_arrows_rounded,
-                    size: 16,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text('Weekly Comparison', style: AppTextStyles.section18),
-              ],
+        headerAction: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+          decoration: BoxDecoration(
+            color: AppColors.surface2,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            'Your Progress',
+            style: AppTextStyles.caption12.copyWith(
+              color: AppColors.textSecondary,
+              fontSize: 10,
             ),
-            const SizedBox(height: 12),
-            Text(
-              'Invite a friend to compare weekly focus hours and cheer each other on!',
-              style: AppTextStyles.secondary12,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 10),
-            FilledButton.tonalIcon(
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.surface2,
-                foregroundColor: AppColors.green,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              ),
-              onPressed: _shareInviteLink,
-              icon: const Icon(Icons.share_rounded, size: 15),
-              label: const Text('Invite a friend', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-            ),
-          ],
+          ),
         ),
+        subtitle: 'Connect with friends to compare weekly focus hours',
       );
     }
 
-    final maxMinutes = math.max(
-      math.max(me.weeklyMinutes, topFriend.weeklyMinutes),
-      60,
+    final friendDetailAsync = ref.watch(
+      weekDetailProvider((userId: topFriend.id, monday: selectedMonday)),
     );
-    final myProgress = (me.weeklyMinutes / maxMinutes).clamp(0.0, 1.0);
-    final friendProgress = (topFriend.weeklyMinutes / maxMinutes).clamp(0.0, 1.0);
+    final friendDays = friendDetailAsync.valueOrNull?.days;
+    final friendMinutes = friendDays != null && friendDays.isNotEmpty
+        ? friendDays.map((d) => d.minutes).toList()
+        : null;
 
     final diffMinutes = (me.weeklyMinutes - topFriend.weeklyMinutes).abs();
     final diffHours = diffMinutes ~/ 60;
@@ -814,231 +763,92 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
     final diffString = diffHours > 0
         ? '${diffHours}h ${diffRemainder}m'
         : '${diffRemainder}m';
-
     final isLeading = me.weeklyMinutes >= topFriend.weeklyMinutes;
 
-    return Container(
+    final differenceBadge = Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
+        color: AppColors.surface2,
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: AppColors.track.withValues(alpha: 0.35),
+          color: AppColors.track.withValues(alpha: 0.5),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.18),
-            blurRadius: 14,
-            offset: const Offset(0, 3),
-          ),
-        ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.compare_arrows_rounded,
-                        size: 16,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        'Weekly Comparison',
-                        style: AppTextStyles.section18,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.surface2,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  'vs. Top Friend',
-                  style: AppTextStyles.caption12.copyWith(
-                    color: AppColors.textSecondary,
-                    fontSize: 10,
-                  ),
-                ),
-              ),
-            ],
+          Icon(
+            isLeading
+                ? Icons.emoji_events_rounded
+                : Icons.trending_up_rounded,
+            size: 16,
+            color: isLeading ? AppColors.green : AppColors.blue,
           ),
-          const SizedBox(height: 14),
-
-          // User Row ("You")
-          _buildComparisonProgressRow(
-            member: me,
-            name: 'You',
-            isYou: true,
-            timeString: me.formattedStudyTime,
-            progress: myProgress,
-            barColor: AppColors.green,
-          ),
-          const SizedBox(height: 10),
-
-          // Top Friend Row
-          _buildComparisonProgressRow(
-            member: topFriend,
-            name: topFriend.name,
-            isYou: false,
-            timeString: topFriend.formattedStudyTime,
-            progress: friendProgress,
-            barColor: AppColors.blue,
-          ),
-          const SizedBox(height: 12),
-
-          // Progress gap highlight badge
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppColors.surface2,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: AppColors.track.withValues(alpha: 0.5),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              isLeading
+                  ? 'You are leading by $diffString this week!'
+                  : '$diffString behind ${topFriend.name.split(' ').first}',
+              style: AppTextStyles.caption12Bold.copyWith(
+                color: AppColors.textPrimary,
+                fontSize: 11,
               ),
             ),
-            child: Row(
-              children: [
-                Icon(
-                  isLeading
-                      ? Icons.emoji_events_rounded
-                      : Icons.trending_up_rounded,
-                  size: 16,
-                  color: isLeading ? AppColors.green : AppColors.blue,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    isLeading
-                        ? 'You are leading by $diffString this week!'
-                        : '$diffString behind ${topFriend.name.split(' ').first}',
-                    style: AppTextStyles.caption12Bold.copyWith(
-                      color: AppColors.textPrimary,
-                      fontSize: 11,
-                    ),
-                  ),
-                ),
-                Text(
-                  isLeading ? 'Leader' : 'Target',
-                  style: AppTextStyles.caption12.copyWith(
-                    color: isLeading ? AppColors.green : AppColors.textSecondary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+          ),
+          Text(
+            isLeading ? 'Leader' : 'Target',
+            style: AppTextStyles.caption12.copyWith(
+              color: isLeading ? AppColors.green : AppColors.textSecondary,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
       ),
     );
-  }
 
-  Widget _buildComparisonProgressRow({
-    required CommunityMember member,
-    required String name,
-    required bool isYou,
-    required String timeString,
-    required double progress,
-    required Color barColor,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                _buildAvatarWidget(member: member, radius: 11, fallbackColor: barColor),
-                const SizedBox(width: 7),
-                Text(
-                  name,
-                  style: AppTextStyles.body14Bold.copyWith(
-                    color: isYou ? AppColors.green : AppColors.textPrimary,
-                    fontSize: 13,
-                  ),
-                ),
-                if (isYou) ...[
-                  const SizedBox(width: 5),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 5,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.green.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      'YOU',
-                      style: AppTextStyles.caption12Bold.copyWith(
-                        fontSize: 8.5,
-                        color: AppColors.green,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            Text(
-              timeString,
-              style: AppTextStyles.body14Bold.copyWith(
-                color: isYou ? AppColors.green : AppColors.textSecondary,
-                fontSize: 13,
-              ),
-            ),
-          ],
+    return WeeklyStudyTimeCard(
+      monday: selectedMonday,
+      weekMinutes: userWeekMinutes,
+      dailyGoalMinutes: dailyGoal,
+      title: 'Weekly Comparison',
+      leadingIcon: const Icon(
+        Icons.compare_arrows_rounded,
+        size: 16,
+        color: AppColors.primary,
+      ),
+      headerAction: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.surface2,
+          borderRadius: BorderRadius.circular(6),
         ),
-        const SizedBox(height: 6),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            height: 8,
-            width: double.infinity,
-            color: AppColors.surface2,
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: progress,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: barColor,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
+        child: Text(
+          'vs. Top Friend',
+          style: AppTextStyles.caption12.copyWith(
+            color: AppColors.textSecondary,
+            fontSize: 10,
           ),
         ),
-      ],
+      ),
+      compareMinutes: friendMinutes,
+      compareLabel: 'vs ${topFriend.formattedStudyTime}',
+      compareRangeLabel: 'You vs ${topFriend.name}',
+      primaryLabel: 'You',
+      compareName: topFriend.name,
+      firstLegendLabel: 'You',
+      secondLegendLabel: topFriend.name,
+      footer: differenceBadge,
     );
   }
 
   // --------------------------------------------------------------------------
-  // 5. LEADERBOARD CARD (Top 5 + "See all" action + native Share action)
+  // 5. LEADERBOARD CARD (Top 5 + "See all" action)
+  // Duplicate invitation button removed; clean list of members.
   // --------------------------------------------------------------------------
   Widget _buildLeaderboardCard(
-    List<CommunityMember> top5,
+    List<CommunityMember> top5Members,
     List<CommunityMember> allMembers,
     String weekLabel,
     DateTime selectedMonday,
@@ -1062,7 +872,6 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header with Title and "See all"
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 10, 10),
             child: Row(
@@ -1079,7 +888,6 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                     Text('Leaderboard', style: AppTextStyles.section18),
                   ],
                 ),
-                // "See all" Action
                 Material(
                   color: Colors.transparent,
                   child: InkWell(
@@ -1116,48 +924,43 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
           ),
           Divider(
             height: 1,
-            color: AppColors.track.withValues(alpha: 0.4),
+            color: AppColors.track.withValues(alpha: 0.35),
           ),
 
-          // Top 5 Rows
-          for (var i = 0; i < top5.length; i++) ...[
-            _buildLeaderboardRow(top5[i], i + 1, selectedMonday),
-            if (i < top5.length - 1)
-              Divider(
+          if (top5Members.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Center(
+                child: Text(
+                  'No study circle members this week.',
+                  style: AppTextStyles.secondary12,
+                ),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.zero,
+              itemCount: top5Members.length,
+              separatorBuilder: (_, _) => Divider(
                 height: 1,
-                indent: 52,
-                endIndent: 14,
                 color: AppColors.track.withValues(alpha: 0.25),
               ),
-          ],
-
-          // Footer action: Native share sheet button
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.green,
-                  side: BorderSide(color: AppColors.green.withValues(alpha: 0.4)),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: _shareInviteLink,
-                icon: const Icon(Icons.share_rounded, size: 14),
-                label: const Text('Share invitation link', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-              ),
+              itemBuilder: (context, index) {
+                final member = top5Members[index];
+                final rank = index + 1;
+                return _buildLeaderboardRow(member, rank, selectedMonday);
+              },
             ),
-          ),
         ],
       ),
     );
   }
 
   Widget _buildLeaderboardRow(CommunityMember member, int rank, DateTime selectedMonday) {
-    final isTop3 = rank <= 3;
     final rankColor = switch (rank) {
-      1 => AppColors.green, // 1st place GREEN
+      1 => AppColors.green,
       2 => AppColors.blue,
       3 => AppColors.pink,
       _ => AppColors.textSecondary,
@@ -1172,35 +975,31 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
           monday: selectedMonday,
         );
       },
-      child: Container(
-        color: member.isCurrentUser
-            ? AppColors.green.withValues(alpha: 0.08)
-            : Colors.transparent,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
         child: Row(
           children: [
-            // Rank Numeral
             SizedBox(
-              width: 24,
+              width: 22,
               child: Text(
                 '$rank',
-                style: AppTextStyles.body14Bold.copyWith(
-                  color: rankColor,
+                style: TextStyle(
                   fontSize: 13,
-                  fontWeight: isTop3 || member.isCurrentUser
-                      ? FontWeight.w800
-                      : FontWeight.w600,
+                  fontWeight: FontWeight.w800,
+                  color: rankColor,
                 ),
                 textAlign: TextAlign.center,
               ),
             ),
-            const SizedBox(width: 8),
-
-            // Profile Avatar (Actual selected avatar portrait or initials fallback)
-            _buildAvatarWidget(member: member, radius: 15, fallbackColor: rankColor),
             const SizedBox(width: 10),
 
-            // Name and (YOU) badge
+            _buildAvatarWidget(
+              member: member,
+              radius: 17,
+              fallbackColor: member.avatarColor,
+            ),
+            const SizedBox(width: 10),
+
             Expanded(
               child: Row(
                 children: [
@@ -1208,9 +1007,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                     child: Text(
                       member.name,
                       style: AppTextStyles.body14Bold.copyWith(
-                        color: member.isCurrentUser
-                            ? (rank == 1 ? AppColors.green : AppColors.cta)
-                            : AppColors.textPrimary,
+                        color: member.isCurrentUser ? AppColors.cta : AppColors.textPrimary,
                         fontSize: 13,
                       ),
                       maxLines: 1,
@@ -1218,21 +1015,19 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                     ),
                   ),
                   if (member.isCurrentUser) ...[
-                    const SizedBox(width: 5),
+                    const SizedBox(width: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
-                        vertical: 1,
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                       decoration: BoxDecoration(
-                        color: (rank == 1 ? AppColors.green : AppColors.cta).withValues(alpha: 0.2),
+                        color: AppColors.cta.withValues(alpha: 0.18),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
                         'YOU',
-                        style: AppTextStyles.caption12Bold.copyWith(
+                        style: TextStyle(
                           fontSize: 8.5,
-                          color: rank == 1 ? AppColors.green : AppColors.cta,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.cta,
                         ),
                       ),
                     ),
@@ -1241,17 +1036,41 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
               ),
             ),
 
-            // Study Time
             Text(
               member.formattedStudyTime,
               style: AppTextStyles.body14Bold.copyWith(
                 fontSize: 13,
-                color: member.isCurrentUser
-                    ? (rank == 1 ? AppColors.green : AppColors.cta)
-                    : (isTop3 ? AppColors.textPrimary : AppColors.textSecondary),
+                color: member.isCurrentUser ? AppColors.green : AppColors.textPrimary,
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  // 6. EXACTLY ONE 'Invite Friends' BUTTON
+  // Positioned at the very bottom of the Community content below all cards.
+  // --------------------------------------------------------------------------
+  Widget _buildInviteFriendsButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: FilledButton.icon(
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.cta,
+          foregroundColor: AppColors.onCta,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          elevation: 0,
+        ),
+        onPressed: _shareInviteLink,
+        icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
+        label: Text(
+          'Invite Friends',
+          style: AppTextStyles.body16Bold.copyWith(color: AppColors.onCta),
         ),
       ),
     );

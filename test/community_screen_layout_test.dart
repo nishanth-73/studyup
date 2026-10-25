@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:studyup/core/theme/app_colors.dart';
+import 'package:studyup/core/widgets/weekly_study_time_card.dart';
 import 'package:studyup/features/community/data/community_models.dart';
-import 'package:studyup/features/community/data/community_repository.dart';
 import 'package:studyup/features/community/presentation/community_providers.dart';
 import 'package:studyup/features/community/presentation/community_screen.dart';
 import 'package:studyup/features/community/presentation/full_leaderboard_screen.dart';
@@ -177,6 +177,34 @@ void main() {
 
       expect(find.byType(FullLeaderboardScreen), findsOneWidget);
       expect(find.text('Leaderboard'), findsWidgets);
+    });
+
+    testWidgets('6. Exactly ONE Invite Friends button exists at the very bottom', (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await tester.pumpWidget(buildTestableCommunityScreen());
+      await tester.pumpAndSettle();
+
+      // Only ONE 'Invite Friends' button
+      expect(find.text('Invite Friends'), findsOneWidget);
+      expect(find.byIcon(Icons.person_add_alt_1_rounded), findsOneWidget);
+
+      // Duplicate invitation buttons are completely removed
+      expect(find.text('Share invitation link'), findsNothing);
+      expect(find.text('Invite a friend'), findsNothing);
+    });
+
+    testWidgets('7. Reuses WeeklyStudyTimeCard component with shared styling from Insights', (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await tester.pumpWidget(buildTestableCommunityScreen());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(WeeklyStudyTimeCard), findsOneWidget);
     });
   });
 }

@@ -13,6 +13,7 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/ui_kit.dart';
 import '../../../core/widgets/app_shell.dart';
 import '../../../core/widgets/week_picker_dialog.dart';
+import '../../../core/widgets/weekly_study_time_card.dart';
 import '../../../core/widgets/date_picker_sheet.dart';
 import '../data/study_session.dart';
 import '../data/study_day.dart';
@@ -807,9 +808,6 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
   }
 
   Widget _weeklyStudyTimeCard() {
-    // Weeks belong to the viewed calendar month only (Monday rows, same
-    // convention as the calendar + monthly chart). The selection snaps
-    // back into the month whenever the month changes.
     final rows = monthWeekRows(_viewYear, _viewMonth);
     final monday = _effectiveWeekMonday(rows);
     final goal = ref.watch(studyProgressProvider).dailyStudyGoalMinutes;
@@ -819,245 +817,18 @@ class _ProgressScreenState extends ConsumerState<ProgressScreen> {
     final compareMinutes = _weeklyCompareDate == null
         ? null
         : _minutesForWeek(_weeklyCompareDate!);
-    final totalMinutes = weekMinutes.fold(0, (sum, minutes) => sum + minutes);
-    final compareTotal = compareMinutes?.fold(
-      0,
-      (sum, minutes) => sum + minutes,
-    );
-    // Goal-relative: Day d % = min(100%, minutes(d) / goal * 100).
-    // Future / unstudied days are 0 minutes -> 0%, never 100% on start.
-    double pct(int m) => (m / (goal <= 0 ? 480 : goal) * 100).clamp(0.0, 100.0);
-    final dateLabel =
-        '${monday.month}/${monday.day} – ${monday.add(const Duration(days: 6)).month}/${monday.add(const Duration(days: 6)).day}';
-    const weekdays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-    const yTicks = [0, 25, 50, 75, 100];
 
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text('WEEKLY STUDY TIME', style: AppTextStyles.label11),
-              ),
-              Text(
-                dateLabel,
-                style: AppTextStyles.caption12Bold.copyWith(fontSize: 12),
-              ),
-              const SizedBox(width: 6),
-              _compareAction(
-                _toggleWeeklyCompare,
-                label: 'Compare week',
-                active: _weeklyCompareDate != null,
-              ),
-            ],
-          ),
-          // Viewed month for the week rows below.
-          Text(
-            '${_monthName(_viewMonth)} $_viewYear',
-            style: AppTextStyles.label10.copyWith(
-              fontSize: 9,
-              color: AppColors.textMuted,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(_fmtDur(totalMinutes), style: AppTextStyles.display40),
-              if (compareTotal != null) ...[
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    'vs ${_fmtDur(compareTotal)}',
-                    style: AppTextStyles.caption12.copyWith(
-                      color: AppColors.blue,
-                      fontSize: 11,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 3),
-          if (compareMinutes != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Text(
-                '${_weekRangeLabel(monday)} vs ${_weekRangeLabel(_weeklyCompareDate!)}',
-                style: AppTextStyles.label10.copyWith(
-                  fontSize: 9,
-                  color: AppColors.blue,
-                ),
-              ),
-            ),
-          Text(
-            'Daily % of goal · 100 = full daily goal',
-            style: AppTextStyles.label10.copyWith(
-              fontSize: 9,
-              color: AppColors.textMuted,
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (totalMinutes == 0) ...[
-            const SizedBox(height: 8),
-            Text(
-              'No study time this week yet.',
-              style: AppTextStyles.label10.copyWith(
-                fontSize: 9,
-                color: AppColors.textMuted,
-              ),
-            ),
-          ],
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 190,
-            child: _ChartEntrance(
-              animationKey: '$weekMinutes$compareMinutes',
-              builder: (progress, isEntering, reduceMotion) => BarChart(
-                BarChartData(
-                  minY: 0,
-                  maxY: 100,
-                  alignment: BarChartAlignment.spaceAround,
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    horizontalInterval: 25,
-                    getDrawingHorizontalLine: (_) => FlLine(
-                      color: AppColors.track.withValues(alpha: 0.7),
-                      strokeWidth: 1,
-                    ),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        interval: 25,
-                        reservedSize: 30,
-                        getTitlesWidget: (value, meta) {
-                          if (!yTicks.contains(value.toInt())) {
-                            return const SizedBox.shrink();
-                          }
-                          return Text(
-                            '${value.toInt()}',
-                            style: AppTextStyles.label10.copyWith(
-                              fontSize: 9,
-                              color: AppColors.textSecondary,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 34,
-                        getTitlesWidget: (value, meta) {
-                          final index = value.toInt();
-                          if (index < 0 || index >= weekMinutes.length) {
-                            return const SizedBox.shrink();
-                          }
-                          final day = monday.add(Duration(days: index));
-                          return SideTitleWidget(
-                            axisSide: meta.axisSide,
-                            space: 5,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  weekdays[index],
-                                  style: AppTextStyles.label10.copyWith(
-                                    fontSize: 9,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                                Text(
-                                  '${day.day}',
-                                  style: AppTextStyles.label10.copyWith(
-                                    fontSize: 8,
-                                    color: AppColors.textMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  barGroups: List.generate(7, (index) {
-                    final minutes = weekMinutes[index];
-                    final percent = pct(minutes);
-                    return BarChartGroupData(
-                      x: index,
-                      barsSpace: compareMinutes == null ? 0 : 3,
-                      barRods: [
-                        BarChartRodData(
-                          toY: percent * progress,
-                          width: compareMinutes == null ? 32 : 14,
-                          color: minutes > 0 ? AppColors.cta : AppColors.track,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(5),
-                          ),
-                        ),
-                        if (compareMinutes != null)
-                          BarChartRodData(
-                            toY: pct(compareMinutes[index]) * progress,
-                            width: 14,
-                            color: compareMinutes[index] > 0
-                                ? AppColors.blue
-                                : AppColors.track,
-                            borderRadius: const BorderRadius.vertical(
-                              top: Radius.circular(5),
-                            ),
-                          ),
-                      ],
-                    );
-                  }),
-                  barTouchData: BarTouchData(
-                    enabled: true,
-                    touchTooltipData: BarTouchTooltipData(
-                      getTooltipItem: (group, groupIndex, rod, rodIndex) =>
-                          BarTooltipItem(
-                            '${rodIndex == 0 ? 'Selected' : 'Compare'}: ${_fmtDur(rodIndex == 0 ? weekMinutes[group.x] : compareMinutes![group.x])} · ${rod.toY.toStringAsFixed(2)}% of goal',
-                            AppTextStyles.caption12Bold.copyWith(
-                              color: Colors.white,
-                            ),
-                          ),
-                    ),
-                  ),
-                ),
-                duration: isEntering || reduceMotion
-                    ? Duration.zero
-                    : const Duration(milliseconds: 650),
-                curve: Curves.easeOutCubic,
-              ),
-            ),
-          ),
-          if (compareMinutes != null) ...[
-            const SizedBox(height: 4),
-            const _CompareLegend(
-              firstLabel: 'Selected week',
-              secondLabel: 'Compare week',
-            ),
-          ],
-        ],
-      ),
+    return WeeklyStudyTimeCard(
+      monday: monday,
+      weekMinutes: weekMinutes,
+      dailyGoalMinutes: goal,
+      subtitle: '${_monthName(_viewMonth)} $_viewYear',
+      compareMinutes: compareMinutes,
+      compareRangeLabel: _weeklyCompareDate != null
+          ? '${_weekRangeLabel(monday)} vs ${_weekRangeLabel(_weeklyCompareDate!)}'
+          : null,
+      onCompareTap: _toggleWeeklyCompare,
+      compareActive: _weeklyCompareDate != null,
     );
   }
 

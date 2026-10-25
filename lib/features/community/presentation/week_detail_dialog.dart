@@ -1,3 +1,4 @@
+import '../../../core/widgets/weekly_study_time_card.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -215,10 +216,20 @@ class _WeekDetailSheetState extends ConsumerState<WeekDetailSheet> {
       (max, d) => math.max(max, d.minutes),
     );
 
+    final weekMinutes = detail.days.map((d) => d.minutes).toList();
+
     return ListView(
       shrinkWrap: true,
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       children: [
+        WeeklyStudyTimeCard(
+          monday: _currentMonday,
+          weekMinutes: weekMinutes,
+          dailyGoalMinutes: weekly.goalMinutes > 0 ? (weekly.goalMinutes ~/ 7) : 480,
+          title: '${widget.userName.toUpperCase()} WEEKLY PROGRESS',
+          subtitle: '${widget.userName} · ${_formatWeekRange(_currentMonday)}',
+        ),
+        const SizedBox(height: 16),
         // Summary Card
         Container(
           padding: const EdgeInsets.all(16),
