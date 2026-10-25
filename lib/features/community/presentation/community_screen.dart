@@ -2,12 +2,14 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_shell.dart';
 import '../../../core/widgets/week_picker_dialog.dart';
+import '../../auth/data/auth_controller.dart';
 import '../../avatar/data/user_profile.dart';
 import '../../avatar/presentation/avatar_widgets.dart';
 import '../../avatar/presentation/user_profile_controller.dart';
@@ -16,6 +18,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../social/data/session_sync.dart';
 import '../../social/data/social_remote.dart';
 import '../data/community_models.dart';
+import '../data/invitation_link_service.dart';
 import 'community_providers.dart';
 import 'full_leaderboard_screen.dart';
 import 'week_detail_dialog.dart';
@@ -36,6 +39,8 @@ class CommunityScreen extends ConsumerStatefulWidget {
 }
 
 class _CommunityScreenState extends ConsumerState<CommunityScreen> {
+  bool _acceptingInvite = false;
+
   static DateTime _currentWeekMonday() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -186,6 +191,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
     final selectedMonday = ref.watch(selectedCommunityMondayProvider);
     final weekLabel = _formatWeekButtonLabel(selectedMonday);
     final homeAsync = ref.watch(communityHomeProvider(selectedMonday));
+    final pendingInviteToken = ref.watch(pendingInviteTokenProvider);
 
     return AppShell(
       currentIndex: 3,
@@ -222,6 +228,12 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                       // 1. TOP BAR (Title + Compact Week Picker, NO extra icon)
                       _buildTopBar(weekLabel, selectedMonday, homeAsync.valueOrNull),
                       const SizedBox(height: 14),
+
+                      // Pending friend invitation banner
+                      if (pendingInviteToken != null) ...[
+                        _buildPendingInvitationCard(pendingInviteToken, selectedMonday),
+                        const SizedBox(height: 14),
+                      ],
 
                       // Async content branch
                       ...homeAsync.when(
@@ -1256,5 +1268,287 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
         ),
       ),
     );
+  }
+
+  // --------------------------------------------------------------------------
+  // INVITATION ACCEPTANCE INTERFACE
+  // --------------------------------------------------------------------------
+  Widget _buildPendingInvitationCard(String token, DateTime selectedMonday) {
+    final previewAsync = ref.watch(invitePreviewProvider(token));
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.green.withValues(alpha: 0.4),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.green.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: previewAsync.when(
+        loading: () => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.green,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text('Checking invitation…', style: AppTextStyles.body14),
+            ],
+          ),
+        ),
+        error: (e, _) => Row(
+          children: [
+            const Icon(Icons.info_outline_rounded, color: AppColors.cta, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Could not verify invitation link.',
+                style: AppTextStyles.caption12.copyWith(color: AppColors.textSecondary),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Dismiss',
+              icon: const Icon(Icons.close_rounded, size: 18, color: AppColors.textSecondary),
+              onPressed: () => ref.read(pendingInviteTokenProvider.notifier).clear(),
+            ),
+          ],
+        ),
+        data: (preview) {
+          if (!preview.isValid) {
+            final String message = preview.isExpired
+                ? 'This invitation link has expired.'
+                : preview.isAlreadyAccepted
+                    ? 'This invitation link was already used.'
+                    : 'This invitation link is not valid.';
+            return Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, color: AppColors.cta, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: AppTextStyles.body14.copyWith(color: AppColors.textSecondary),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => ref.read(pendingInviteTokenProvider.notifier).clear(),
+                  child: const Text('Dismiss'),
+                ),
+              ],
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: AppColors.green.withValues(alpha: 0.2),
+                    child: Text(
+                      preview.inviterName.isNotEmpty
+                          ? preview.inviterName[0].toUpperCase()
+                          : 'F',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.green,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'STUDY CIRCLE INVITATION',
+                          style: AppTextStyles.caption12.copyWith(
+                            color: AppColors.green,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          preview.inviterName,
+                          style: AppTextStyles.body16Bold,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Decline',
+                    icon: const Icon(Icons.close_rounded, size: 20, color: AppColors.textSecondary),
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      ref.read(pendingInviteTokenProvider.notifier).clear();
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '${preview.inviterName} wants to connect with you on StudyUP so you can compare study progress and keep each other going.',
+                style: AppTextStyles.body14.copyWith(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 44,
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.green,
+                          foregroundColor: AppColors.onCta,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                        onPressed: _acceptingInvite
+                            ? null
+                            : () => _handleAcceptInvitation(token, preview.inviterName, selectedMonday),
+                        child: _acceptingInvite
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.onCta,
+                                ),
+                              )
+                            : const Text(
+                                'Accept Invitation',
+                                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                              ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  SizedBox(
+                    height: 44,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.textSecondary,
+                        side: BorderSide(color: AppColors.track.withValues(alpha: 0.3)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () {
+                        HapticFeedback.lightImpact();
+                        ref.read(pendingInviteTokenProvider.notifier).clear();
+                      },
+                      child: const Text('Decline'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _handleAcceptInvitation(
+    String token,
+    String inviterName,
+    DateTime selectedMonday,
+  ) async {
+    final currentUserId = ref.read(backendUserIdProvider);
+    if (currentUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please sign in to connect with $inviterName.'),
+          action: SnackBarAction(
+            label: 'Sign In',
+            onPressed: () {
+              try {
+                context.push('/auth');
+              } catch (_) {}
+            },
+          ),
+        ),
+      );
+      try {
+        context.push('/auth');
+      } catch (_) {}
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _acceptingInvite = true);
+    try {
+      final repo = ref.read(communityRepositoryProvider);
+      if (repo == null) throw StateError('Community repository unavailable');
+
+      final status = await repo.acceptInvite(token);
+      if (!mounted) return;
+
+      if (status == 'ok') {
+        HapticFeedback.mediumImpact();
+        await ref.read(pendingInviteTokenProvider.notifier).clear();
+        ref.invalidate(communityHomeProvider(selectedMonday));
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('You and $inviterName are now study friends!'),
+            backgroundColor: AppColors.green,
+          ),
+        );
+      } else if (status == 'own') {
+        await ref.read(pendingInviteTokenProvider.notifier).clear();
+        messenger.showSnackBar(
+          const SnackBar(content: Text('You cannot accept your own invitation link.')),
+        );
+      } else if (status == 'already_friends') {
+        await ref.read(pendingInviteTokenProvider.notifier).clear();
+        ref.invalidate(communityHomeProvider(selectedMonday));
+        messenger.showSnackBar(
+          SnackBar(content: Text('You and $inviterName are already study friends.')),
+        );
+      } else if (status == 'used') {
+        await ref.read(pendingInviteTokenProvider.notifier).clear();
+        messenger.showSnackBar(
+          const SnackBar(content: Text('This invitation link has already been used.')),
+        );
+      } else if (status == 'expired') {
+        await ref.read(pendingInviteTokenProvider.notifier).clear();
+        messenger.showSnackBar(
+          const SnackBar(content: Text('This invitation link has expired.')),
+        );
+      } else {
+        await ref.read(pendingInviteTokenProvider.notifier).clear();
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Invalid invitation link.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not accept invitation: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _acceptingInvite = false);
+      }
+    }
   }
 }

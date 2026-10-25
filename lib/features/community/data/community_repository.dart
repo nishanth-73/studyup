@@ -75,6 +75,27 @@ class CommunityRepository {
     return WeekDetailSummary.fromJson(data);
   }
 
+  /// Fetches invitation preview (inviter name, avatar, weekly percent) via get_invite_preview RPC.
+  /// Callable safely before user signs in or accepts.
+  Future<InvitePreviewData> getInvitePreview(String token) async {
+    final clean = token.trim();
+    if (clean.isEmpty) {
+      return const InvitePreviewData(status: 'invalid', inviterName: '');
+    }
+    try {
+      final response = await _client.rpc(
+        'get_invite_preview',
+        params: {'p_token': clean},
+      );
+      final data = response is Map<String, dynamic>
+          ? response
+          : (jsonDecode(response.toString()) as Map<String, dynamic>);
+      return InvitePreviewData.fromJson(data);
+    } catch (_) {
+      return const InvitePreviewData(status: 'invalid', inviterName: '');
+    }
+  }
+
   /// Generates a cryptographically secure 24-character token, inserts into invites table,
   /// and returns the complete public invite link.
   Future<String> createInviteLink() async {

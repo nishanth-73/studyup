@@ -287,3 +287,32 @@ class WeekDetailSummary {
     );
   }
 }
+
+/// Invitation preview metadata returned by get_invite_preview RPC.
+class InvitePreviewData {
+  final String status; // 'valid', 'used', 'expired', 'invalid'
+  final String inviterName;
+  final String? inviterAvatar;
+  final int currentWeekPercent;
+
+  const InvitePreviewData({
+    required this.status,
+    required this.inviterName,
+    this.inviterAvatar,
+    this.currentWeekPercent = 0,
+  });
+
+  factory InvitePreviewData.fromJson(Map<String, dynamic> json) {
+    return InvitePreviewData(
+      status: json['status'] as String? ?? 'invalid',
+      inviterName: json['inviter_name'] as String? ?? 'A friend',
+      inviterAvatar: json['inviter_avatar'] as String?,
+      currentWeekPercent: (json['current_week_percent'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  bool get isValid => status == 'valid';
+  bool get isExpired => status == 'expired';
+  bool get isAlreadyAccepted => status == 'used';
+  bool get isInvalid => status == 'invalid';
+}

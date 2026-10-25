@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/onboarding/presentation/onboarding_screen.dart';
@@ -16,11 +17,42 @@ import '../../features/plan/presentation/plan_screen.dart';
 import '../../features/focus/presentation/focus_screen.dart';
 import '../../features/community/presentation/community_screen.dart';
 import '../../features/community/presentation/full_leaderboard_screen.dart';
+import '../../features/community/data/invitation_link_service.dart';
 import 'startup_gate.dart';
 
 // Bottom-tab destinations use NoTransitionPage = instant switch, no sliding.
 NoTransitionPage<T> _noSlide<T>(Widget child) =>
     NoTransitionPage<T>(child: child);
+
+/// Captures an incoming invitation token from /invite/:token or /i/:token,
+/// persists it via pendingInviteTokenProvider, and immediately renders Community.
+class InviteDeepLinkGate extends ConsumerStatefulWidget {
+  final String token;
+  const InviteDeepLinkGate({required this.token, super.key});
+
+  @override
+  ConsumerState<InviteDeepLinkGate> createState() => _InviteDeepLinkGateState();
+}
+
+class _InviteDeepLinkGateState extends ConsumerState<InviteDeepLinkGate> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.token.isNotEmpty) {
+        ref.read(pendingInviteTokenProvider.notifier).setToken(
+              widget.token,
+              navigate: false,
+            );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const CommunityScreen();
+  }
+}
 
 final GoRouter appRouter = GoRouter(
   // Legacy App Links arrive as FULL urls. Ignoring the platform location
@@ -38,6 +70,18 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(path: '/setup-goal', builder: (_, _) => const SetupGoalScreen()),
     GoRoute(path: '/auth', builder: (_, _) => const StartupGate()),
+    GoRoute(
+      path: '/invite/:token',
+      builder: (_, state) => InviteDeepLinkGate(
+        token: state.pathParameters['token'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/i/:token',
+      builder: (_, state) => InviteDeepLinkGate(
+        token: state.pathParameters['token'] ?? '',
+      ),
+    ),
     ShellRoute(
       builder: (_, state, child) =>
           AuthenticatedRoute(returnTo: state.uri.toString(), child: child),
@@ -66,10 +110,8 @@ final GoRouter appRouter = GoRouter(
         GoRoute(
           path: '/community/leaderboard',
           builder: (_, _) {
-            final now = DateTime.now();
-            final today = DateTime(now.year, now.month, now.day);
-            return FullLeaderboardScreen(
-              members: const [],
+            return const FullLeaderboardScreen(
+              members: [],
               weekLabel: 'This week',
             );
           },

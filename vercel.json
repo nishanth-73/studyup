@@ -17,9 +17,16 @@
     { "source": "/privacy", "destination": "/index.html" },
     { "source": "/community", "destination": "/index.html" },
     { "source": "/community/:path*", "destination": "/index.html" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|\\.well-known/).*)", "destination": "/index.html" }
   ],
   "headers": [
+    {
+      "source": "/.well-known/assetlinks.json",
+      "headers": [
+        { "key": "Content-Type", "value": "application/json" },
+        { "key": "Cache-Control", "value": "public, max-age=86400" }
+      ]
+    },
     {
       "source": "/apk.json",
       "headers": [{ "key": "Cache-Control", "value": "no-cache" }]

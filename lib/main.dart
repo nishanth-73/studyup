@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/backend/feedback_config.dart';
@@ -11,6 +10,7 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/data/auth_controller.dart';
 import 'features/social/data/social_providers.dart';
+import 'features/community/data/invitation_link_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,6 +63,9 @@ class StudyUpApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Listen to incoming friend invitation links (cold & warm launch).
+    ref.watch(invitationLinkServiceProvider);
+
     final userId = ref.watch(backendUserIdProvider);
     if (userId != null &&
         ref.watch(localAccountDataAccessProvider(userId)).valueOrNull == true) {

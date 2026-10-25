@@ -43,7 +43,7 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- StudyUp invitation App Links: https://<host>/i/<token>.
+            <!-- StudyUp invitation App Links: https://<host>/i/<token> and /invite/<token>.
                  Primary host: studyup-4x7z.vercel.app (the main production
                  domain — not a per-deployment URL) — the same deployment
                  as /api/feedback; it publishes
@@ -59,16 +59,20 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="https" android:host="studyup-4x7z.vercel.app" android:pathPrefix="/i/"/>
+                <data android:scheme="https" android:host="studyup-4x7z.vercel.app" android:pathPrefix="/invite/"/>
                 <data android:scheme="https" android:host="studyup-feedback-api.vercel.app" android:pathPrefix="/i/"/>
+                <data android:scheme="https" android:host="studyup-feedback-api.vercel.app" android:pathPrefix="/invite/"/>
                 <data android:scheme="https" android:host="invite.studyup.app" android:pathPrefix="/i/"/>
+                <data android:scheme="https" android:host="invite.studyup.app" android:pathPrefix="/invite/"/>
             </intent-filter>
-            <!-- Custom-scheme fallback: studyup://invite/<token>. Works with
-                 no hosting at all; the app handles it identically. -->
+            <!-- Custom-scheme fallback: studyup://invite/<token> and studyup://i/<token>.
+                 Works with no hosting at all; the app handles it identically. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="studyup" android:host="invite"/>
+                <data android:scheme="studyup" android:host="i"/>
             </intent-filter>
             <!-- Supabase Auth callback: com.studyup.studyup://login-callback/.
                  Supabase redirects here after Google OAuth, email confirmation,
