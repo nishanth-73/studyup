@@ -10,6 +10,9 @@ import '../data/study_session.dart';
 import '../data/study_day.dart' show nextStudyResetAt;
 import '../../../core/notifications/notification_service.dart';
 import '../../robo/robo_events.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../social/data/session_sync.dart';
+import '../../social/data/social_remote.dart';
 
 @immutable
 class StudyProgressState {
@@ -817,6 +820,16 @@ class StudyProgressController extends StateNotifier<StudyProgressState> {
     // service persists the notified day, surviving restarts without
     // re-notifying; the XP ledger does the same for awards.
     unawaited(_checkGoalReached(DateTime.now()));
+
+    // Synchronize saved sessions to Supabase backend for Community & friends
+    try {
+      final client = Supabase.instance.client;
+      if (client.auth.currentUser != null) {
+        unawaited(SessionSyncService(SocialRemote(client)).syncAll(sessions).catchError((_) => 0));
+      }
+    } catch (_) {
+      // Supabase not initialized or running in unit tests
+    }
   }
 
   /// Serialized XP evaluation: awards newly qualified days/weeks and

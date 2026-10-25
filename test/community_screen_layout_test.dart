@@ -7,6 +7,7 @@ import 'package:studyup/features/community/data/community_models.dart';
 import 'package:studyup/features/community/presentation/community_providers.dart';
 import 'package:studyup/features/community/presentation/community_screen.dart';
 import 'package:studyup/features/community/presentation/full_leaderboard_screen.dart';
+import 'package:studyup/features/community/presentation/week_detail_dialog.dart';
 
 void main() {
   const testMe = CommunityMember(
@@ -69,6 +70,27 @@ void main() {
     return ProviderScope(
       overrides: [
         communityHomeProvider.overrideWith((ref, monday) async => testHomeData),
+        weekDetailProvider.overrideWith((ref, args) async => WeekDetailSummary(
+          userId: args.userId,
+          userName: args.userId == 'user-me' ? 'You' : 'Aisha Rahman',
+          isMe: args.userId == 'user-me',
+          weeklyCard: WeeklyCardSummary(
+            weekStart: args.monday,
+            completedSessions: 5,
+            totalMinutes: 920,
+            goalMinutes: 600,
+            percent: 153,
+            streak: 14,
+          ),
+          days: List.generate(
+            7,
+            (i) => DayDetailSummary(
+              date: args.monday.add(Duration(days: i)),
+              minutes: 130,
+              sessionsCompleted: 1,
+            ),
+          ),
+        )),
       ],
       child: const MaterialApp(
         home: CommunityScreen(),
@@ -196,7 +218,7 @@ void main() {
       expect(find.text('Invite a friend'), findsNothing);
     });
 
-    testWidgets('7. Reuses WeeklyStudyTimeCard component with shared styling from Insights', (tester) async {
+    testWidgets('7. Tapping a member row opens WeekDetailSheet which reuses WeeklyStudyTimeCard from Insights', (tester) async {
       tester.view.physicalSize = const Size(800, 1600);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -204,6 +226,13 @@ void main() {
       await tester.pumpWidget(buildTestableCommunityScreen());
       await tester.pumpAndSettle();
 
+      // Tap on Aisha Rahman in the leaderboard row
+      final memberRow = find.text('Aisha Rahman').last;
+      await tester.tap(memberRow);
+      await tester.pumpAndSettle();
+
+      // WeekDetailSheet opens and uses WeeklyStudyTimeCard from Insights
+      expect(find.byType(WeekDetailSheet), findsOneWidget);
       expect(find.byType(WeeklyStudyTimeCard), findsOneWidget);
     });
   });
