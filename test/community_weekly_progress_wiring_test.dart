@@ -202,20 +202,15 @@ void main() {
 
       // "28h 32m" must appear multiple times:
       // 1) In the Top 3 Podium (#1 spot)
-      // 2) In the Weekly Comparison Card ("You" row)
-      // 3) In the Leaderboard row (#1 spot with "YOU" tag)
+      // 2) In the Leaderboard row (#1 spot with "YOU" tag)
       final formattedTotal = find.text('28h 32m');
       expect(formattedTotal, findsWidgets);
-      expect(formattedTotal.evaluate().length, greaterThanOrEqualTo(3));
+      expect(formattedTotal.evaluate().length, greaterThanOrEqualTo(2));
 
       // Leaderboard must show "You" ranked #1 because 28h 32m (1712m) > 20h (1200m)
       expect(find.text('#1'), findsOneWidget);
       expect(find.text('You'), findsWidgets);
       expect(find.text('YOU'), findsWidgets);
-
-      // Comparison card must show difference badge: 28h 32m - 20h 0m = 8h 32m leading
-      expect(find.text('You are leading by 8h 32m this week!'), findsOneWidget);
-      expect(find.byIcon(Icons.emoji_events_rounded), findsOneWidget);
     });
 
     testWidgets('3. Changing selected week updates user and friends together', (

@@ -4,8 +4,6 @@ import '../../../core/theme/app_colors.dart';
 import '../../auth/data/auth_controller.dart';
 import '../../avatar/presentation/user_profile_controller.dart';
 import '../../progress/presentation/study_progress_controller.dart';
-import '../../social/data/session_sync.dart';
-import '../../social/data/social_remote.dart';
 import '../data/community_models.dart';
 import '../data/community_repository.dart';
 
@@ -26,19 +24,35 @@ final selectedCommunityMondayProvider = StateProvider<DateTime>((ref) {
 /// unified with the authoritative Insights weekly calculation.
 final communityHomeProvider =
     FutureProvider.family<CommunityHomeData, DateTime>((ref, monday) async {
+  ref.keepAlive();
   final repo = ref.watch(communityRepositoryProvider);
   final userId = ref.watch(backendUserIdProvider);
-  final studyProgress = ref.watch(studyProgressProvider);
 
-  // Authoritative local weekly calculation matching Insights exactly
-  final userWeekMinutes = studyProgress.minutesByWeekday(monday);
-  final userTotalMinutes = userWeekMinutes.fold(0, (sum, m) => sum + m);
-  final dailyGoal = studyProgress.dailyStudyGoalMinutes;
-  final weeklyGoal = dailyGoal * 7;
-  final userPercent = weeklyGoal > 0 ? (userTotalMinutes / weeklyGoal * 100).round() : 0;
+  // Authoritative local weekly calculation matching Insights exactly.
+  // Using select ensures the provider is not re-evaluated every 1 second by the
+  // active session ticker unless the actual weekly minutes or session count changes.
+  final progress = ref.watch(studyProgressProvider.select((p) {
+    final weekMins = p.minutesByWeekday(monday);
+    final totalMins = weekMins.fold(0, (sum, m) => sum + m);
+    final weeklyGoal = p.dailyStudyGoalMinutes * 7;
+    final percent = weeklyGoal > 0 ? (totalMins / weeklyGoal * 100).round() : 0;
+    final today = DateTime.now();
+    return (
+      userTotalMinutes: totalMins,
+      weeklyGoal: weeklyGoal,
+      userPercent: percent,
+      todayMinutes: p.minutesForDate(today),
+      todaySessions: p.sessionCountForDate(today),
+      sessionsCount: p.sessions.length,
+    );
+  }));
+
+  final userTotalMinutes = progress.userTotalMinutes;
+  final weeklyGoal = progress.weeklyGoal;
+  final userPercent = progress.userPercent;
   final todayNow = DateTime.now();
-  final todayMinutes = studyProgress.minutesForDate(todayNow);
-  final todaySessions = studyProgress.sessionCountForDate(todayNow);
+  final todayMinutes = progress.todayMinutes;
+  final todaySessions = progress.todaySessions;
 
   // If offline or not signed in, return genuine progress based on real local records
   if (repo == null || userId == null) {
@@ -75,17 +89,7 @@ final communityHomeProvider =
     );
   }
 
-  // 1. Sync local sessions to Supabase so friends receive the latest progress
-  final client = Supabase.instance.client;
-  if (studyProgress.sessions.isNotEmpty) {
-    try {
-      await SessionSyncService(SocialRemote(client)).syncAll(studyProgress.sessions);
-    } catch (_) {
-      // Best-effort sync
-    }
-  }
-
-  // 2. Fetch backend community home data
+  // Fetch backend community home data
   final rawHome = await repo.getCommunityHome(monday);
 
   // 3. Unify current user's weekly metrics with the authoritative local calculation
@@ -145,6 +149,7 @@ final communityHomeProvider =
 /// - When viewing a friend: fetches authorized summary from backend get_week_detail RPC.
 final weekDetailProvider = FutureProvider.family<WeekDetailSummary, ({String userId, DateTime monday})>(
   (ref, args) async {
+    ref.keepAlive();
     final currentUserId = ref.watch(backendUserIdProvider);
     final isMe = args.userId == currentUserId ||
         args.userId == 'user-me' ||

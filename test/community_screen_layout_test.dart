@@ -141,7 +141,7 @@ void main() {
       expect(find.byIcon(Icons.star_rounded), findsOneWidget);
     });
 
-    testWidgets('3. Weekly Comparison Card compares You vs Top Friend with progress bars and difference', (
+    testWidgets('3. Comparison card and Today\'s Focus card are completely removed from Community', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(800, 1600);
@@ -151,17 +151,11 @@ void main() {
       await tester.pumpWidget(buildTestableCommunityScreen());
       await tester.pumpAndSettle();
 
-      // Comparison card header
-      expect(find.text('Weekly Comparison'), findsOneWidget);
-      expect(find.text('vs. Top Friend'), findsOneWidget);
-      expect(find.byIcon(Icons.compare_arrows_rounded), findsOneWidget);
-
-      // Shows 'You' and top friend name
-      expect(find.text('You'), findsWidgets);
-      expect(find.text('Aisha Rahman'), findsWidgets);
-
-      // Shows progress difference or target/leader indicator
-      expect(find.byIcon(Icons.trending_up_rounded), findsOneWidget);
+      // Comparison card and Today session card must be removed
+      expect(find.text('Weekly Comparison'), findsNothing);
+      expect(find.text('Today\'s Focus'), findsNothing);
+      expect(find.byIcon(Icons.compare_arrows_rounded), findsNothing);
+      expect(find.byIcon(Icons.trending_up_rounded), findsNothing);
     });
 
     testWidgets('4. Leaderboard Card displays Top 5 by default, highlights You, and has "See all"', (

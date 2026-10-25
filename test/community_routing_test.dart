@@ -34,8 +34,8 @@ void main() {
     expect(find.text('Community'), findsOneWidget);
     expect(find.text('Study circle rankings'), findsOneWidget);
     expect(find.text('TOP 3 THIS WEEK'), findsOneWidget);
-    expect(find.text('Weekly Comparison'), findsOneWidget);
     expect(find.text('Leaderboard'), findsOneWidget);
+    expect(find.text('Invite Friends'), findsOneWidget);
   });
 
   testWidgets('appRouter opens /community/leaderboard directly', (tester) async {
