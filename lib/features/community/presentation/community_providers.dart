@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/data/auth_controller.dart';
+import '../../avatar/presentation/user_profile_controller.dart';
 import '../../progress/presentation/study_progress_controller.dart';
 import '../../social/data/session_sync.dart';
 import '../../social/data/social_remote.dart';
@@ -14,7 +15,7 @@ final communityRepositoryProvider = Provider<CommunityRepository?>((ref) {
   return CommunityRepository(Supabase.instance.client);
 });
 
-/// Holds the selected week Monday for Community screen.
+/// Holds the selected week Monday for Community screen and person detail view.
 final selectedCommunityMondayProvider = StateProvider<DateTime>((ref) {
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
@@ -139,8 +140,55 @@ final communityHomeProvider =
 });
 
 /// Fetches 7-day week detail breakdown for a specific user and week.
+/// - When viewing yourself (isMe): directly derives from authoritative local records
+///   (studyProgressProvider.minutesByWeekday(monday)), ensuring 100% agreement with Insights.
+/// - When viewing a friend: fetches authorized summary from backend get_week_detail RPC.
 final weekDetailProvider = FutureProvider.family<WeekDetailSummary, ({String userId, DateTime monday})>(
   (ref, args) async {
+    final currentUserId = ref.watch(backendUserIdProvider);
+    final isMe = args.userId == currentUserId ||
+        args.userId == 'user-me' ||
+        args.userId == 'local-user' ||
+        args.userId == 'me';
+
+    if (isMe) {
+      final studyProgress = ref.watch(studyProgressProvider);
+      final weekMinutes = studyProgress.minutesByWeekday(args.monday);
+      final totalMinutes = weekMinutes.fold(0, (sum, m) => sum + m);
+      final dailyGoal = studyProgress.dailyStudyGoalMinutes;
+      final weeklyGoal = dailyGoal * 7;
+      final percent = weeklyGoal > 0 ? (totalMinutes / weeklyGoal * 100).round() : 0;
+      final userProfile = ref.watch(userProfileProvider).valueOrNull;
+
+      final days = List.generate(7, (i) {
+        final dayDate = args.monday.add(Duration(days: i));
+        return DayDetailSummary(
+          date: dayDate,
+          minutes: weekMinutes[i],
+          sessionsCompleted: studyProgress.sessionCountForDate(dayDate),
+        );
+      });
+
+      final weeklyCard = WeeklyCardSummary(
+        weekStart: args.monday,
+        completedSessions: days.fold(0, (sum, d) => sum + d.sessionsCompleted),
+        totalMinutes: totalMinutes,
+        goalMinutes: weeklyGoal > 0 ? weeklyGoal : 600,
+        percent: percent,
+        streak: 0,
+      );
+
+      return WeekDetailSummary(
+        userId: args.userId,
+        userName: 'You',
+        avatarUrl: userProfile?.avatarId,
+        isMe: true,
+        weeklyCard: weeklyCard,
+        days: days,
+      );
+    }
+
+    // Friend detail: fetch authorized summary from backend
     final repo = ref.watch(communityRepositoryProvider);
     if (repo == null) {
       throw StateError('Backend is offline');

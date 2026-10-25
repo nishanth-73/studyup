@@ -1,19 +1,22 @@
-import '../../../core/widgets/weekly_study_time_card.dart';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/widgets/weekly_study_time_card.dart';
+import '../../avatar/data/user_profile.dart';
+import '../../avatar/presentation/avatar_widgets.dart';
+import '../../avatar/presentation/user_profile_controller.dart';
 import '../data/community_models.dart';
 import 'community_providers.dart';
 
-/// 7-day week detail breakdown modal sheet.
+/// Opens the Community person-detail view as a bottom sheet.
 void showWeekDetailSheet({
   required BuildContext context,
   required String userId,
   required String userName,
-  required DateTime monday,
+  String? avatarUrl,
+  DateTime? monday,
 }) {
   HapticFeedback.selectionClick();
   showModalBottomSheet<void>(
@@ -23,6 +26,7 @@ void showWeekDetailSheet({
     builder: (_) => WeekDetailSheet(
       userId: userId,
       userName: userName,
+      avatarUrl: avatarUrl,
       initialMonday: monday,
     ),
   );
@@ -31,13 +35,15 @@ void showWeekDetailSheet({
 class WeekDetailSheet extends ConsumerStatefulWidget {
   final String userId;
   final String userName;
-  final DateTime initialMonday;
+  final String? avatarUrl;
+  final DateTime? initialMonday;
 
   const WeekDetailSheet({
     super.key,
     required this.userId,
     required this.userName,
-    required this.initialMonday,
+    this.avatarUrl,
+    this.initialMonday,
   });
 
   @override
@@ -45,30 +51,31 @@ class WeekDetailSheet extends ConsumerStatefulWidget {
 }
 
 class _WeekDetailSheetState extends ConsumerState<WeekDetailSheet> {
-  late DateTime _currentMonday;
-
   @override
   void initState() {
     super.initState();
-    _currentMonday = widget.initialMonday;
+    if (widget.initialMonday != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(selectedCommunityMondayProvider.notifier).state = widget.initialMonday!;
+      });
+    }
   }
 
-  void _prevWeek() {
+  void _prevWeek(DateTime currentMonday) {
     HapticFeedback.selectionClick();
-    setState(() {
-      _currentMonday = _currentMonday.subtract(const Duration(days: 7));
-    });
+    ref.read(selectedCommunityMondayProvider.notifier).state =
+        currentMonday.subtract(const Duration(days: 7));
   }
 
-  void _nextWeek() {
+  void _nextWeek(DateTime currentMonday) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final thisMonday = today.subtract(Duration(days: today.weekday - DateTime.monday));
-    if (_currentMonday.isBefore(thisMonday)) {
+    if (currentMonday.isBefore(thisMonday)) {
       HapticFeedback.selectionClick();
-      setState(() {
-        _currentMonday = _currentMonday.add(const Duration(days: 7));
-      });
+      ref.read(selectedCommunityMondayProvider.notifier).state =
+          currentMonday.add(const Duration(days: 7));
     }
   }
 
@@ -84,20 +91,117 @@ class _WeekDetailSheetState extends ConsumerState<WeekDetailSheet> {
     return '${months[monday.month - 1]} ${monday.day} – ${months[sunday.month - 1]} ${sunday.day}';
   }
 
+  Widget _buildAvatar(String? avatarId, String userName, bool isMe) {
+    if (avatarId != null && isValidAvatarId(avatarId)) {
+      return UserAvatar(avatarId: avatarId, size: 44);
+    }
+
+    final initials = _getInitials(userName);
+    final color = isMe ? AppColors.green : AppColors.blue;
+
+    return CircleAvatar(
+      radius: 22,
+      backgroundColor: color.withValues(alpha: 0.25),
+      child: Text(
+        initials,
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  String _getInitials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return 'U';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
+  Widget _buildHeader(WeekDetailSummary? detail) {
+    final isMe = detail?.isMe ?? false;
+    final avatarId = isMe
+        ? (ref.watch(userProfileProvider).valueOrNull?.avatarId ?? detail?.avatarUrl ?? widget.avatarUrl)
+        : (detail?.avatarUrl ?? widget.avatarUrl);
+    final displayName = detail?.userName ?? widget.userName;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        children: [
+          _buildAvatar(avatarId, displayName, isMe),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        displayName,
+                        style: AppTextStyles.title26.copyWith(fontSize: 20),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isMe) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: AppColors.green.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'YOU',
+                          style: AppTextStyles.caption12Bold.copyWith(
+                            fontSize: 8.5,
+                            color: AppColors.green,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isMe ? 'Your Study Performance' : 'Study Circle Member',
+                  style: AppTextStyles.secondary12,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              Navigator.of(context).pop();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final selectedMonday = ref.watch(selectedCommunityMondayProvider);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final thisMonday = today.subtract(Duration(days: today.weekday - DateTime.monday));
-    final canGoNext = _currentMonday.isBefore(thisMonday);
+    final canGoNext = selectedMonday.isBefore(thisMonday);
 
     final detailAsync = ref.watch(
-      weekDetailProvider((userId: widget.userId, monday: _currentMonday)),
+      weekDetailProvider((userId: widget.userId, monday: selectedMonday)),
     );
 
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.82,
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
       decoration: const BoxDecoration(
         color: AppColors.background,
@@ -120,31 +224,10 @@ class _WeekDetailSheetState extends ConsumerState<WeekDetailSheet> {
             ),
             const SizedBox(height: 14),
 
-            // Header Row: User Info & Close
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(widget.userName, style: AppTextStyles.title26),
-                        const SizedBox(height: 2),
-                        Text('7-Day Study Breakdown', style: AppTextStyles.secondary12),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
-            ),
+            // Header with Person Avatar, Name & Close
+            _buildHeader(detailAsync.valueOrNull),
 
-            // Week Stepper Bar
+            // Week Stepper Bar (Shared Selected-Week State)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: Container(
@@ -159,19 +242,21 @@ class _WeekDetailSheetState extends ConsumerState<WeekDetailSheet> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.chevron_left_rounded, size: 20),
-                      onPressed: _prevWeek,
+                      onPressed: () => _prevWeek(selectedMonday),
                     ),
                     Text(
-                      _formatWeekRange(_currentMonday),
+                      _formatWeekRange(selectedMonday),
                       style: AppTextStyles.body14Bold.copyWith(color: AppColors.textPrimary),
                     ),
                     IconButton(
                       icon: Icon(
                         Icons.chevron_right_rounded,
                         size: 20,
-                        color: canGoNext ? AppColors.textPrimary : AppColors.textSecondary.withValues(alpha: 0.3),
+                        color: canGoNext
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary.withValues(alpha: 0.3),
                       ),
-                      onPressed: canGoNext ? _nextWeek : null,
+                      onPressed: canGoNext ? () => _nextWeek(selectedMonday) : null,
                     ),
                   ],
                 ),
@@ -194,13 +279,20 @@ class _WeekDetailSheetState extends ConsumerState<WeekDetailSheet> {
                     children: [
                       const Icon(Icons.info_outline_rounded, color: AppColors.cta, size: 32),
                       const SizedBox(height: 10),
-                      Text('Could not load week detail', style: AppTextStyles.body14Bold),
+                      Text('Could not load weekly progress', style: AppTextStyles.body14Bold),
                       const SizedBox(height: 4),
                       Text(err.toString(), style: AppTextStyles.caption12, textAlign: TextAlign.center),
+                      const SizedBox(height: 12),
+                      FilledButton.tonal(
+                        onPressed: () => ref.invalidate(
+                          weekDetailProvider((userId: widget.userId, monday: selectedMonday)),
+                        ),
+                        child: const Text('Retry'),
+                      ),
                     ],
                   ),
                 ),
-                data: (detail) => _buildDetailContent(detail),
+                data: (detail) => _buildDetailContent(detail, selectedMonday),
               ),
             ),
           ],
@@ -209,28 +301,27 @@ class _WeekDetailSheetState extends ConsumerState<WeekDetailSheet> {
     );
   }
 
-  Widget _buildDetailContent(WeekDetailSummary detail) {
+  Widget _buildDetailContent(WeekDetailSummary detail, DateTime selectedMonday) {
     final weekly = detail.weeklyCard;
-    final maxDayMinutes = detail.days.fold<int>(
-      60,
-      (max, d) => math.max(max, d.minutes),
-    );
-
     final weekMinutes = detail.days.map((d) => d.minutes).toList();
 
     return ListView(
       shrinkWrap: true,
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       children: [
+        // 1. Weekly Progress Card following Insights Weekly Progress visual style
         WeeklyStudyTimeCard(
-          monday: _currentMonday,
+          monday: selectedMonday,
           weekMinutes: weekMinutes,
           dailyGoalMinutes: weekly.goalMinutes > 0 ? (weekly.goalMinutes ~/ 7) : 480,
-          title: '${widget.userName.toUpperCase()} WEEKLY PROGRESS',
-          subtitle: '${widget.userName} · ${_formatWeekRange(_currentMonday)}',
+          title: '${detail.userName.toUpperCase()} WEEKLY PROGRESS',
+          subtitle: '${detail.userName} · ${_formatWeekRange(selectedMonday)}',
+          primaryBarColor: detail.isMe ? AppColors.green : AppColors.blue,
+          primaryLabel: detail.isMe ? 'You' : detail.userName,
         ),
         const SizedBox(height: 16),
-        // Summary Card
+
+        // 2. Summary Metrics Card (Studied, Goal %, Sessions, Streak)
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -251,56 +342,6 @@ class _WeekDetailSheetState extends ConsumerState<WeekDetailSheet> {
             ],
           ),
         ),
-        const SizedBox(height: 18),
-
-        Text('DAILY ACTIVITY', style: AppTextStyles.caption12Bold.copyWith(color: AppColors.textSecondary)),
-        const SizedBox(height: 10),
-
-        // 7-day breakdown rows
-        ...detail.days.map((day) {
-          final ratio = maxDayMinutes > 0 ? (day.minutes / maxDayMinutes).clamp(0.0, 1.0) : 0.0;
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 44,
-                  child: Text(day.shortDayName, style: AppTextStyles.body14Bold),
-                ),
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: Container(
-                      height: 10,
-                      color: AppColors.surface2,
-                      child: FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: ratio,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: day.minutes > 0 ? AppColors.cta : Colors.transparent,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 72,
-                  child: Text(
-                    day.formattedStudyTime,
-                    textAlign: TextAlign.right,
-                    style: AppTextStyles.caption12Bold.copyWith(
-                      color: day.minutes > 0 ? AppColors.textPrimary : AppColors.textSecondary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }),
       ],
     );
   }

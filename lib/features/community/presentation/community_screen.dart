@@ -72,6 +72,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
               context: context,
               userId: member.id,
               userName: member.name,
+              avatarUrl: member.avatarUrl,
               monday: selectedMonday,
             );
           },
@@ -518,6 +519,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
                 context: context,
                 userId: member.id,
                 userName: member.name,
+                avatarUrl: member.avatarUrl,
                 monday: selectedMonday,
               );
             }
@@ -1151,6 +1153,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
           context: context,
           userId: member.id,
           userName: member.name,
+          avatarUrl: member.avatarUrl,
           monday: selectedMonday,
         );
       },

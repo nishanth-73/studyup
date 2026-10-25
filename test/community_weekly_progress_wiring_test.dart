@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:studyup/core/theme/app_colors.dart';
+import 'package:studyup/core/widgets/weekly_study_time_card.dart';
 import 'package:studyup/features/community/data/community_models.dart';
 import 'package:studyup/features/community/presentation/community_providers.dart';
 import 'package:studyup/features/community/presentation/community_screen.dart';
+import 'package:studyup/features/community/presentation/week_detail_dialog.dart';
 import 'package:studyup/features/progress/data/study_session.dart';
 import 'package:studyup/features/progress/presentation/study_progress_controller.dart';
 
@@ -276,6 +278,148 @@ void main() {
       // Never shows fabricated users or fake times on failure
       expect(find.text('28h 32m'), findsNothing);
       expect(find.text('Aisha Rahman'), findsNothing);
+    });
+
+    testWidgets('5. Person-detail view removes Daily Activity section completely and shows Weekly Progress card with actual 28h 32m for You', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final state = StudyProgressState(
+        sessions: sampleSessions,
+        dailyStudyGoalMinutes: 480,
+        isLoaded: true,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            studyProgressProvider.overrideWith((ref) => _StaticProgressNotifier(state)),
+            selectedCommunityMondayProvider.overrideWith((ref) => monday),
+          ],
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      showWeekDetailSheet(
+                        context: context,
+                        userId: 'user-me',
+                        userName: 'You',
+                        monday: monday,
+                      );
+                    },
+                    child: const Text('Open Detail'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open Detail'));
+      await tester.pumpAndSettle();
+
+      // Modal sheet is open
+      expect(find.byType(WeekDetailSheet), findsOneWidget);
+
+      // Entire Daily Activity section is removed
+      expect(find.text('DAILY ACTIVITY'), findsNothing);
+
+      // Replaces with Weekly Progress Card following Insights visual style
+      expect(find.byType(WeeklyStudyTimeCard), findsOneWidget);
+      expect(find.text('YOU WEEKLY PROGRESS'), findsOneWidget);
+
+      // Displays the actual 28h 32m study time derived from real saved sessions
+      expect(find.text('28h 32m'), findsWidgets);
+
+      // Displays summary metrics
+      expect(find.text('Studied'), findsOneWidget);
+      expect(find.text('Goal %'), findsOneWidget);
+      expect(find.text('Sessions'), findsOneWidget);
+      expect(find.text('Streak'), findsOneWidget);
+    });
+
+    testWidgets('6. Person-detail view for friend displays friend authorized weekly total matching leaderboard', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final state = StudyProgressState(
+        sessions: sampleSessions,
+        dailyStudyGoalMinutes: 480,
+        isLoaded: true,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            studyProgressProvider.overrideWith((ref) => _StaticProgressNotifier(state)),
+            selectedCommunityMondayProvider.overrideWith((ref) => monday),
+            weekDetailProvider.overrideWith((ref, args) async => WeekDetailSummary(
+              userId: args.userId,
+              userName: 'Aisha Rahman',
+              isMe: false,
+              weeklyCard: WeeklyCardSummary(
+                weekStart: args.monday,
+                completedSessions: 6,
+                totalMinutes: 1200, // 20h
+                goalMinutes: 600,
+                percent: 200,
+                streak: 10,
+              ),
+              days: List.generate(
+                7,
+                (i) => DayDetailSummary(
+                  date: args.monday.add(Duration(days: i)),
+                  minutes: 171,
+                  sessionsCompleted: 1,
+                ),
+              ),
+            )),
+          ],
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      showWeekDetailSheet(
+                        context: context,
+                        userId: 'friend-1',
+                        userName: 'Aisha Rahman',
+                        monday: monday,
+                      );
+                    },
+                    child: const Text('Open Friend Detail'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open Friend Detail'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(WeekDetailSheet), findsOneWidget);
+
+      // No Daily Activity section
+      expect(find.text('DAILY ACTIVITY'), findsNothing);
+
+      // Weekly Progress Card for Aisha Rahman
+      expect(find.byType(WeeklyStudyTimeCard), findsOneWidget);
+      expect(find.text('AISHA RAHMAN WEEKLY PROGRESS'), findsOneWidget);
+      expect(find.text('20h'), findsWidgets);
     });
   });
 }
