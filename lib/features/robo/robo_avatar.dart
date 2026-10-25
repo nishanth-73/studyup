@@ -134,7 +134,7 @@ class RoboAvatar extends StatefulWidget {
   /// accessibility setting shows the still pose, like `animated: false`.
   final bool respectReducedMotion;
 
-  /// Accessibility label. Defaults to "Robot, <state>".
+  /// Accessibility label. Defaults to "Robot, `<state>`".
   final String? semanticLabel;
 
   @override

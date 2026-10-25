@@ -30,11 +30,13 @@ void main() {
           for (final entry in transformTracks) {
             trackNumeric(entry.track);
           }
-          if (gate != null)
+          if (gate != null) {
             out.add(gate.visibleAt(tSeconds, scene.loopSeconds) ? 1 : 0);
+          }
           if (opacityTrack != null) trackNumeric(opacityTrack);
-          if (motion != null)
+          if (motion != null) {
             out.addAll(motion.sample(tSeconds, scene.loopSeconds));
+          }
           if (dashTrack != null) trackNumeric(dashTrack);
           if (dashOffsetTrack != null) trackNumeric(dashOffsetTrack);
           for (final child in children) {
@@ -52,11 +54,13 @@ void main() {
             trackNumeric(entry.track);
           }
           if (morph != null) trackNumeric(morph);
-          if (gate != null)
+          if (gate != null) {
             out.add(gate.visibleAt(tSeconds, scene.loopSeconds) ? 1 : 0);
+          }
           if (opacityTrack != null) trackNumeric(opacityTrack);
-          if (motion != null)
+          if (motion != null) {
             out.addAll(motion.sample(tSeconds, scene.loopSeconds));
+          }
           if (paint.dashTrack != null) trackNumeric(paint.dashTrack!);
           if (paint.dashOffsetTrack != null) {
             trackNumeric(paint.dashOffsetTrack!);

@@ -104,6 +104,7 @@ class _CommunityScreenState extends ConsumerState<CommunityScreen> {
           'Join my calm study circle on StudyUp: Focus on your goals. Grow together.\n$inviteUrl';
 
       try {
+        // ignore: deprecated_member_use
         final result = await Share.share(shareText);
         if (result.status == ShareResultStatus.dismissed) return;
         if (result.status == ShareResultStatus.success) return;
