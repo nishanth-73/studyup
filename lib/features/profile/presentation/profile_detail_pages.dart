@@ -694,31 +694,51 @@ class _HelpTopicCard extends StatelessWidget {
               ),
               if (expanded) ...[
                 const SizedBox(height: 10),
-                for (final line in topic.lines)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          margin: const EdgeInsets.only(top: 7, right: 8),
-                          width: 5,
-                          height: 5,
-                          decoration: const BoxDecoration(
-                            color: AppColors.cta,
-                            shape: BoxShape.circle,
-                          ),
+                if (topic.sections.isNotEmpty) ...[
+                  for (final section in topic.sections) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 6),
+                      child: Text(
+                        section.heading,
+                        style: AppTextStyles.caption12Bold.copyWith(
+                          color: AppColors.textPrimary,
                         ),
-                        Expanded(
-                          child: Text(line, style: AppTextStyles.caption12),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
+                    for (final line in section.lines)
+                      _buildBulletLine(line),
+                  ],
+                ] else ...[
+                  for (final line in topic.lines)
+                    _buildBulletLine(line),
+                ],
               ],
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildBulletLine(String line) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 7, right: 8),
+            width: 5,
+            height: 5,
+            decoration: const BoxDecoration(
+              color: AppColors.cta,
+              shape: BoxShape.circle,
+            ),
+          ),
+          Expanded(
+            child: Text(line, style: AppTextStyles.caption12),
+          ),
+        ],
       ),
     );
   }

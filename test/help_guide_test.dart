@@ -7,18 +7,20 @@ import 'package:studyup/features/profile/presentation/profile_detail_pages.dart'
 
 void main() {
   group('help guide content', () {
-    test('exactly the four essential topics, in order', () {
+    test('essential topics, in order, including Community', () {
       expect(helpTopics.map((t) => t.id).toList(), [
         'home',
         'subjects',
         'focus',
         'progress',
+        'community',
       ]);
       expect(helpTopics.map((t) => t.title).toList(), [
         'Home',
         'Subjects',
         'Focus & sessions',
         'Progress',
+        'Community',
       ]);
     });
 
@@ -37,12 +39,10 @@ void main() {
       }
     });
 
-    test('no removed or advanced topics are mentioned', () {
+    test('no obsolete or removed topics are in titles', () {
       final all = helpTopics.map((t) => t.title).join(' | ');
       for (final gone in [
         'Getting started',
-        'Troubleshooting',
-        'Community',
         'Notifications',
         'Chapters:',
       ]) {
@@ -67,6 +67,27 @@ void main() {
         );
       }
     });
+
+    test('community topic covers invitations, podium, leaderboard, troubleshooting and download guidance', () {
+      final communityTopic = helpTopics.firstWhere((t) => t.id == 'community');
+      expect(communityTopic.sections, hasLength(3));
+
+      final headings = communityTopic.sections.map((s) => s.heading).toList();
+      expect(headings, [
+        'Inviting friends & joining circles',
+        'Podium, rankings & member progress',
+        'Troubleshooting & FAQs',
+      ]);
+
+      final allLines = communityTopic.lines.join(' ');
+      expect(allLines, contains('Invite Friends'));
+      expect(allLines, contains('Accept Invitation'));
+      expect(allLines, contains('Top 3 Podium'));
+      expect(allLines, contains('See all'));
+      expect(allLines, contains('Download button shows “Coming soon”'));
+      expect(allLines, contains('Missing minutes?'));
+      expect(allLines, contains('refresh Community'));
+    });
   });
 
   group('HelpPage widgets', () {
@@ -83,16 +104,15 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('shows the four compact topics collapsed', (tester) async {
+    testWidgets('shows the five compact topics collapsed', (tester) async {
       await pumpHelp(tester);
-      for (final title in ['Home', 'Subjects', 'Focus & sessions', 'Progress']) {
+      for (final title in ['Home', 'Subjects', 'Focus & sessions', 'Progress', 'Community']) {
         expect(find.text(title), findsOneWidget);
       }
-      // No search box and no article list remain.
       expect(find.byType(TextField), findsNothing);
-      expect(find.byIcon(Icons.expand_more), findsNWidgets(4));
-      // Bullet lines stay hidden until a topic is opened.
+      expect(find.byIcon(Icons.expand_more), findsNWidgets(5));
       expect(find.textContaining('reminder fires'), findsNothing);
+      expect(find.textContaining('Invite Friends'), findsNothing);
     });
 
     testWidgets('tapping a topic expands it, tapping again collapses', (
@@ -109,6 +129,33 @@ void main() {
       expect(find.textContaining('reminder fires'), findsNothing);
     });
 
+    testWidgets('tapping Community expands sections with headings and troubleshooting', (
+      tester,
+    ) async {
+      await pumpHelp(tester);
+      await tester.ensureVisible(find.text('Community'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Community'));
+      await tester.pumpAndSettle();
+
+      // Section Headings
+      expect(find.text('Inviting friends & joining circles'), findsOneWidget);
+      expect(find.text('Podium, rankings & member progress'), findsOneWidget);
+      expect(find.text('Troubleshooting & FAQs'), findsOneWidget);
+
+      // Section Lines
+      expect(find.textContaining("Tap 'Invite Friends'"), findsOneWidget);
+      expect(find.textContaining('Top 3 Podium'), findsOneWidget);
+      expect(find.textContaining('Coming soon'), findsOneWidget);
+      expect(find.textContaining('Missing minutes?'), findsOneWidget);
+
+      // Collapse again
+      await tester.tap(find.text('Community'));
+      await tester.pumpAndSettle();
+      expect(find.text('Inviting friends & joining circles'), findsNothing);
+    });
+
     testWidgets('opening another topic closes the previous one', (
       tester,
     ) async {
@@ -117,12 +164,12 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('reminder fires'), findsOneWidget);
 
-      await tester.ensureVisible(find.text('Progress'));
+      await tester.ensureVisible(find.text('Community'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Progress'));
+      await tester.tap(find.text('Community'));
       await tester.pumpAndSettle();
       expect(find.textContaining('reminder fires'), findsNothing);
-      expect(find.textContaining('day-parts pie'), findsOneWidget);
+      expect(find.text('Inviting friends & joining circles'), findsOneWidget);
       expect(find.byIcon(Icons.expand_less), findsOneWidget);
     });
   });
